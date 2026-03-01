@@ -38,7 +38,32 @@ def find_value_stocks():
     except Exception as e:
         return f"筛选失败: {str(e)}"
 
-def get_trading_signals(symbol="sh600000"):
+def get_stock_research_reports(symbol="601318"):
+    """获取个股研报分析数据"""
+    print(f"正在获取 {symbol} 的机构研报...")
+    try:
+        # 东方财富-个股研报列表
+        df = ak.stock_zyjs_report_em(symbol=symbol)
+        if not df.empty:
+            # 取最近的3篇研报
+            reports = df.head(3)
+            return reports[['报告日期', '机构名称', '研究员', '报告标题', '评级名称']]
+        return "暂无相关研报数据"
+    except Exception as e:
+        return f"获取研报失败: {str(e)}"
+
+def get_profit_forecast(symbol="601318"):
+    """获取盈利预测数据"""
+    print(f"正在获取 {symbol} 的盈利预测...")
+    try:
+        df = ak.stock_profit_forecast_em(symbol=symbol)
+        if not df.empty:
+            # 获取最近一年的预测
+            latest = df.head(1)
+            return latest
+        return None
+    except:
+        return None
     """
     智能买卖点提示 (基于简单的双均线金叉策略)
     symbol: 股票代码，如 sh600000

@@ -48,6 +48,7 @@ with col_right:
         st.warning(value)
 
 import plotly.graph_objects as go
+from main import get_stock_research_reports, get_profit_forecast
 
 def plot_radar_chart(scores, categories):
     fig = go.Figure()
@@ -68,21 +69,43 @@ def plot_radar_chart(scores, categories):
 
 # 3. 个股诊股
 st.header("🔍 个股综合评估雷达")
-symbol_input = st.text_input("输入股票代码进行全方位诊断 (如 sh601318)", "sh601318")
+symbol_input = st.text_input("输入股票代码进行全方位诊断 (如 601318)", "601318")
 if st.button("开始全面诊断"):
-    with st.spinner('正在调取深度数据...'):
-        # 模拟多维度评分逻辑（实际可接入财务、技术、资金面计算）
-        # 维度：估值(PE/PB)、动能(MA)、资金(Flow)、成长(Growth)、红利(Dividend)
-        categories = ['估值安全度', '技术动能', '主力资金', '成长潜力', '股息红利']
+    with st.spinner('正在调取深度数据与研报...'):
+        # 1. 评分与雷达图
+        categories = ['估值安全度', '技术动能', '主力资金', '机构评级', '股息红利']
         
-        # 示例评分逻辑 (实际应根据数据计算)
-        scores = [85, 60, 45, 70, 90] # 以中国平安为例的示意评分
+        # 实际评分模拟
+        reports = get_stock_research_reports(symbol_input)
+        
+        # 评分逻辑：根据机构评级给分 (买入:100, 增持:80, 中性:60...)
+        inst_score = 60 # 默认中性
+        if isinstance(reports, pd.DataFrame) and not reports.empty:
+            rating = reports.iloc[0]['评级名称']
+            if "买入" in rating or "推荐" in rating: inst_score = 95
+            elif "增持" in rating: inst_score = 80
+        
+        scores = [85, 60, 45, inst_score, 90]
         
         fig = plot_radar_chart(scores, categories)
         st.plotly_chart(fig, use_container_width=True)
         
-        signal = get_trading_signals(symbol_input)
-        st.info(f"实时信号：{signal}")
+        # 2. 详细研报列表
+        st.subheader("📋 最新机构研报")
+        if isinstance(reports, pd.DataFrame):
+            st.table(reports)
+        else:
+            st.warning(reports)
+            
+        # 3. 盈利预测
+        forecast = get_profit_forecast(symbol_input)
+        if forecast is not None and not forecast.empty:
+            st.subheader("💰 盈利预测 (EPS/净利润)")
+            st.write(f"机构一致预测 2024/25 盈利增长率: **{forecast.iloc[0]['2024预测每股收益']}** / **{forecast.iloc[0]['2025预测每股收益']}**")
+
+        # 4. 实时信号
+        signal = get_trading_signals("sh" + symbol_input if not symbol_input.startswith(('sh', 'sz')) else symbol_input)
+        st.info(f"实时交易信号：{signal}")
 
 st.divider()
 st.caption("免责声明：本工具仅供学习交流，不构成投资建议。数据来源：AkShare")
