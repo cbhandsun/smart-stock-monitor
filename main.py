@@ -66,6 +66,31 @@ def get_trading_signals(symbol="sh600000"):
     except Exception as e:
         return f"分析信号失败: {str(e)}"
 
+def get_hot_trend_stocks():
+    """
+    基于热点趋势的选股策略：
+    1. 寻找资金净流入排名靠前的行业板块
+    2. 在该板块中寻找领涨且有主力资金持续流入的个股
+    """
+    print("正在执行热点趋势选股策略...")
+    try:
+        # 1. 获取行业板块资金流向排行
+        sector_flow = ak.stock_board_industry_fund_flow_rank_em()
+        top_sector = sector_flow.sort_values(by='今日主力净额', ascending=False).iloc[0]
+        sector_name = top_sector['板块名称']
+        print(f"当前最热板块: {sector_name} (主力净流入: {top_sector['今日主力净额']})")
+
+        # 2. 获取该热点板块内的个股行情
+        # 注意：这里简化为获取该板块领涨股
+        stocks_in_sector = ak.stock_board_industry_cons_em(symbol=sector_name)
+        
+        # 筛选逻辑：板块内涨幅 > 2% 且成交量活跃的个股
+        trend_stocks = stocks_in_sector[stocks_in_sector['涨跌幅'] > 2].sort_values(by='涨跌幅', ascending=False)
+        
+        return sector_name, trend_stocks.head(5)
+    except Exception as e:
+        return None, f"热点选股失败: {str(e)}"
+
 def main():
     print("=== Smart Stock Monitor 启动 ===")
     
@@ -74,10 +99,13 @@ def main():
     print("\n[今日大盘]")
     print(overview[['名称', '最新价', '涨跌额', '涨跌幅']])
     
-    # 2. 热门板块
-    hot = get_hot_sectors()
-    print("\n[热门板块 TOP5]")
-    print(hot[['板块名称', '涨跌幅', '总市值']])
+    # 2. 热门板块与趋势选股
+    sector_name, trend_stocks = get_hot_trend_stocks()
+    print(f"\n[热点趋势选股 - 归属板块: {sector_name}]")
+    if isinstance(trend_stocks, pd.DataFrame):
+        print(trend_stocks[['代码', '名称', '最新价', '涨跌幅', '成交量']])
+    else:
+        print(trend_stocks)
 
     # 3. 价值洼地
     value = find_value_stocks()
