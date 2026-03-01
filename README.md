@@ -21,9 +21,12 @@
 
 ```bash
 # 安装依赖
-pip install akshare pandas matplotlib
+pip install akshare pandas streamlit
 
-# 运行监控
+# 运行 Web 版 (推荐)
+streamlit run app.py
+
+# 运行命令行版
 python main.py
 ```
 
