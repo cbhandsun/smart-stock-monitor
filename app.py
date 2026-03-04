@@ -21,7 +21,7 @@ except ImportError:
 WATCHLIST_FILE = "/home/node/.openclaw/workspace-dev/smart-stock-monitor/watchlist.json"
 REPORT_DIR = "/home/node/.openclaw/workspace-dev/smart-stock-monitor/reports"
 
-# ---- Theme & Neumorphic Design ----
+# ---- Theme & Accessibility Fixes ----
 st.set_page_config(
     page_title="SSM Terminal Excellence",
     layout="wide",
@@ -131,7 +131,7 @@ if 'selected_stock' not in st.session_state:
 
 L = LANG_MAP[st.session_state['lang']]
 
-# Custom Glassmorphism & Modern UI CSS
+# Custom Glassmorphism & Modern UI CSS (Fixed Accessibility)
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=JetBrains+Mono&display=swap');
@@ -139,19 +139,22 @@ st.markdown("""
     :root {
         --primary: #3b82f6;
         --bg-main: #fcfdfe;
-        --card-bg: rgba(255, 255, 255, 0.8);
-        --glass-border: rgba(226, 232, 240, 0.6);
+        --card-bg: rgba(255, 255, 255, 0.9);
+        --glass-border: rgba(226, 232, 240, 0.8);
+        --text-dark: #1e293b;
+        --sidebar-bg: #0f172a;
     }
 
     html, body, [class*="css"] {
         font-family: 'Sora', sans-serif;
-        color: #1e293b;
+        color: var(--text-dark);
     }
 
     .main {
         background: radial-gradient(circle at top left, #f1f5f9, #ffffff);
     }
 
+    /* Metric Card Fix */
     div[data-testid="stMetric"] {
         background: var(--card-bg) !important;
         backdrop-filter: blur(10px);
@@ -160,16 +163,27 @@ st.markdown("""
         padding: 24px !important;
         box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05) !important;
     }
+    div[data-testid="stMetricLabel"] > div {
+        color: #64748b !important;
+        font-weight: 600 !important;
+    }
 
+    /* Sidebar Fix - Contrast & Visibility */
     [data-testid="stSidebar"] {
-        background: #0f172a !important;
+        background: var(--sidebar-bg) !important;
         border-right: 1px solid #1e293b;
     }
     
-    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] p {
+    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3, [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {
         color: #f8fafc !important;
     }
+    
+    /* Sidebar Selectbox/Input Text Color */
+    [data-testid="stSidebar"] div[data-baseweb="select"] > div {
+        color: #1e293b !important; /* Keep dropdown text dark for readability against white bg */
+    }
 
+    /* Tab Modernization Fix */
     .stTabs [data-baseweb="tab-list"] {
         background: #f1f5f9;
         padding: 8px;
@@ -180,6 +194,7 @@ st.markdown("""
         border-radius: 8px !important;
         padding: 8px 24px !important;
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        color: #64748b !important;
     }
     .stTabs [data-baseweb="tab"][aria-selected="true"] {
         background: white !important;
@@ -190,6 +205,22 @@ st.markdown("""
         display: none;
     }
 
+    /* Button Contrast Fix */
+    .stButton > button {
+        font-weight: 600 !important;
+    }
+    .stButton > button[kind="primary"] {
+        background-color: var(--primary) !important;
+        color: white !important;
+        border: none !important;
+    }
+    .stButton > button[kind="secondary"] {
+        background-color: white !important;
+        color: var(--text-dark) !important;
+        border: 1px solid var(--glass-border) !important;
+    }
+
+    /* AI Bubble Accessibility */
     .ai-bubble {
         background: white;
         border: 1px solid #e2e8f0;
@@ -197,7 +228,17 @@ st.markdown("""
         padding: 24px;
         line-height: 1.8;
         font-size: 1rem;
+        color: #334155;
         box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.04);
+    }
+    
+    /* Segmented Control Fix */
+    div[data-testid="stSegmentedControl"] button {
+        color: #475569 !important;
+    }
+    div[data-testid="stSegmentedControl"] button[aria-checked="true"] {
+        color: white !important;
+        background-color: var(--primary) !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -229,7 +270,7 @@ def load_cached_report(symbol):
 with st.sidebar:
     st.markdown(f"<div style='padding: 20px 0;'><h2 style='letter-spacing: -1px; margin-bottom: 0;'>{L['title']}</h2><p style='color: #94a3b8; font-size: 0.85rem;'>{L['subtitle']}</p></div>", unsafe_allow_html=True)
     
-    # Language Switch
+    # Language Switch (Visual distinction)
     l_c1, l_c2 = st.columns(2)
     if l_c1.button("中文", use_container_width=True, type="primary" if st.session_state['lang'] == 'zh' else "secondary"):
         st.session_state['lang'] = 'zh'
@@ -245,8 +286,8 @@ with st.sidebar:
     for stock in my_stocks:
         with st.container():
             c1, c2 = st.columns([5, 1])
-            c1.markdown(f"<span style='font-size: 0.9rem; font-weight: 600;'>{stock}</span> <span style='color: #64748b; font-size: 0.8rem;'>{name_map.get(stock, '')}</span>", unsafe_allow_html=True)
-            if c2.button("×", key=f"rm_{stock}"):
+            c1.markdown(f"<span style='font-size: 0.9rem; font-weight: 600; color: #f8fafc;'>{stock}</span> <span style='color: #94a3b8; font-size: 0.8rem;'>{name_map.get(stock, '')}</span>", unsafe_allow_html=True)
+            if c2.button("×", key=f"rm_{stock}", help="Remove"):
                 my_stocks.remove(stock)
                 save_watchlist(my_stocks)
                 st.rerun()
@@ -291,6 +332,7 @@ with tab_main:
     with c3:
         st.markdown(f"<div style='background: #fffbeb; border-radius: 12px; padding: 15px; border: 1px solid #fef3c7;'><b style='color: #92400e;'>{L['strat_growth']}</b><p style='margin:0; font-size: 0.8rem; color: #f59e0b;'>{L['strat_growth_desc']}</p></div>", unsafe_allow_html=True)
 
+    # UI fix for segmented control selection color
     strat_key = st.segmented_control(L['engine_label'], ["Value", "Momentum", "Growth"], default="Value", label_visibility="collapsed")
     
     if strat_key == "Value": df = find_value_stocks()
@@ -356,7 +398,7 @@ with tab_diag:
         if not kline.empty:
             fig = go.Figure(data=[go.Candlestick(
                 x=kline['日期'], open=kline['开盘'], high=kline['最高'], low=kline['最低'], close=kline['收盘'],
-                increasing_line_color='#2563eb', decreasing_line_color='#64748b'
+                increasing_line_color='#ef5350', decreasing_line_color='#26a69a'
             )])
             fig.update_layout(
                 height=500, margin=dict(l=0,r=0,t=0,b=0),
