@@ -1,5 +1,5 @@
 import os
-# Clear proxy to fix EastMoney access issues (often blocked by proxy)
+# Clear proxy to fix access issues
 for k in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'ALL_PROXY', 'http_proxy'.upper(), 'https_proxy'.upper(), 'all_proxy'.upper()]:
     os.environ.pop(k, None)
 os.environ['NO_PROXY'] = '*'
@@ -9,73 +9,78 @@ import pandas as pd
 import streamlit as st
 import requests
 import time
+import re
 
-def safe_ak_fetch(func, *args, **kwargs):
-    """带重试的 akshare 数据抓取"""
-    for i in range(3):
-        try:
-            # 强制不使用代理
-            df = func(*args, **kwargs)
-            if df is not None and not df.empty: return df
-        except Exception as e:
-            if i == 2: print(f"AKFetch Final Error: {e}")
-            time.sleep(2)
+def fetch_sina_market_snapshot(page=1):
+    """通过新浪财经接口抓取全市场快照 (作为 AkShare 失效时的备选)"""
+    # 新浪 A 股行情列表接口 (每页 80 条)
+    url = f"https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData?page={page}&num=80&sort=changepercent&asc=0&node=hs_a&symbol=&_s_r_a=init"
+    try:
+        r = requests.get(url, timeout=5)
+        # 新浪返回的是不规范的 JSON (key 没有引号)，需要处理
+        text = r.text
+        # 简单转换：给 key 加引号
+        text = re.sub(r'([\{,])(\w+):', r'\1"\2":', text)
+        import json
+        data = json.loads(text)
+        df = pd.DataFrame(data)
+        if not df.empty:
+            # 统一列名以兼容后续逻辑
+            df.rename(columns={
+                'symbol': '代码',
+                'name': '名称',
+                'trade': '最新价',
+                'changepercent': '涨跌幅',
+                'per': '市盈率',
+                'pb': '市净率',
+                'amount': '成交额',
+                'turnoverratio': '换手率'
+            }, inplace=True)
+            # 处理代码格式 (sh600519 -> 600519)
+            df['代码'] = df['代码'].apply(lambda x: x[2:] if len(x) > 2 else x)
+            return df
+    except Exception as e:
+        print(f"Sina Fetch Error: {e}")
     return pd.DataFrame()
 
-@st.cache_data(ttl=300, show_spinner=False)
-def get_market_overview():
-    """新浪接口获取指数快照"""
-    try:
-        url = "https://hq.sinajs.cn/list=s_sh000001,s_sz399001,s_sz399006"
-        headers = {'Referer': 'https://finance.sina.com.cn/'}
-        resp = requests.get(url, headers=headers, timeout=5)
-        text = resp.text
-        data = []
-        for line in text.strip().split(';'):
-            if '="' in line:
-                key, val = line.split('="')
-                val = val.strip('"')
-                parts = val.split(',')
-                if len(parts) > 3:
-                    data.append({'名称': parts[0], '最新价': float(parts[1]), '涨跌幅': float(parts[3])})
-        df = pd.DataFrame(data)
-        if not df.empty: return df
-    except: pass
-    return pd.DataFrame(columns=['名称', '最新价', '涨跌幅'])
-
 def get_full_market_data():
-    """抓取全市场快照，针对 empty 情况增加强制刷新逻辑"""
-    # 优先尝试 EM 源
-    df = safe_ak_fetch(ak.stock_zh_a_spot_em)
+    """抓取全市场快照，针对海外服务器增加新浪源兜底"""
+    # 1. 尝试 EM 源 (AkShare)
+    df = pd.DataFrame()
+    try:
+        # 减少抓取量尝试通过
+        df = ak.stock_zh_a_spot_em()
+    except: pass
     
-    # 如果 EM 依然为空，说明该接口被当前环境屏蔽，尝试腾讯接口作为终极兜底
+    # 2. 如果 EM 依然失败，使用新浪接口手动抓取前几页做演示
     if df.empty:
-        try:
-            df = ak.stock_zh_a_spot_config_sina() # 注意：某些版本 akshare 腾讯接口函数名不同
-        except:
-            # 实在不行尝试历史行情接口凑合今天的数据
-            pass
+        pages = []
+        for p in range(1, 4): # 抓取前 3 页 (240 只股票)
+            pdf = fetch_sina_market_snapshot(page=p)
+            if not pdf.empty: pages.append(pdf)
+            time.sleep(0.5)
+        if pages:
+            df = pd.concat(pages, ignore_index=True)
+            
     return df
 
 @st.cache_data(ttl=600, show_spinner=False)
-def find_value_stocks(pe_max=20, pb_max=2.0):
-    """价值挖掘逻辑优化"""
+def find_value_stocks(pe_max=25, pb_max=2.5):
+    """价值挖掘逻辑 (兼容新浪源)"""
     df = get_full_market_data()
     if df.empty: return pd.DataFrame()
     
     try:
-        # 兼容不同列名
-        pe_col = '市盈率-动态' if '市盈率-动态' in df.columns else '市盈率'
+        pe_col = '市盈率' if '市盈率' in df.columns else '市盈率-动态'
         pb_col = '市净率'
         
-        # 转换数据类型确保万无一失
         df[pe_col] = pd.to_numeric(df[pe_col], errors='coerce')
         df[pb_col] = pd.to_numeric(df[pb_col], errors='coerce')
+        df['最新价'] = pd.to_numeric(df['最新价'], errors='coerce')
+        df['涨跌幅'] = pd.to_numeric(df['涨跌幅'], errors='coerce')
         
         mask = (df[pe_col] > 0) & (df[pe_col] < pe_max) & (df[pb_col] > 0) & (df[pb_col] < pb_max)
         filtered = df[mask].copy()
-        
-        # 计算综合价值得分
         filtered['综合得分'] = (1 / filtered[pe_col]) + (1 / filtered[pb_col])
         res = filtered.sort_values(by='综合得分', ascending=False).head(15)
         return res[['代码', '名称', '最新价', '涨跌幅', pe_col, pb_col]].rename(columns={pe_col: 'PE', pb_col: 'PB'})
@@ -83,31 +88,30 @@ def find_value_stocks(pe_max=20, pb_max=2.0):
 
 @st.cache_data(ttl=600, show_spinner=False)
 def find_momentum_stocks():
-    """动能策略逻辑优化"""
+    """动能策略 (兼容新浪源)"""
     df = get_full_market_data()
     if df.empty: return pd.DataFrame()
     try:
         df['涨跌幅'] = pd.to_numeric(df['涨跌幅'], errors='coerce')
         df['换手率'] = pd.to_numeric(df['换手率'], errors='coerce')
-        mask = (df['涨跌幅'] > 2) & (df['涨跌幅'] < 9) & (df['换手率'] > 3)
-        filtered = df[mask].copy()
-        return filtered.sort_values(by='成交额', ascending=False).head(15)[['代码', '名称', '最新价', '涨跌幅', '换手率', '成交额']]
-    except: return pd.DataFrame()
-
-@st.cache_data(ttl=600, show_spinner=False)
-def find_growth_stocks():
-    """成长策略逻辑优化"""
-    df = get_full_market_data()
-    if df.empty: return pd.DataFrame()
-    try:
-        df['成交额'] = pd.to_numeric(df['成交额'], errors='coerce')
-        # 筛选成交活跃（>5亿）且表现正向的标的
-        mask = (df['涨跌幅'] > 0) & (df['成交额'] > 500000000)
+        mask = (df['涨跌幅'] > 1) & (df['涨跌幅'] < 9)
         filtered = df[mask].copy()
         return filtered.sort_values(by='涨跌幅', ascending=False).head(15)[['代码', '名称', '最新价', '涨跌幅', '成交额']]
     except: return pd.DataFrame()
 
-# ---- 其余辅助函数保持不变 ----
+@st.cache_data(ttl=600, show_spinner=False)
+def find_growth_stocks():
+    """成长策略 (兼容新浪源)"""
+    df = get_full_market_data()
+    if df.empty: return pd.DataFrame()
+    try:
+        df['成交额'] = pd.to_numeric(df['成交额'], errors='coerce')
+        mask = (df['成交额'] > 100000000) # > 1亿
+        filtered = df[mask].copy()
+        return filtered.sort_values(by='成交额', ascending=False).head(15)[['代码', '名称', '最新价', '涨跌幅', '成交额']]
+    except: return pd.DataFrame()
+
+# ---- 后续 AI 诊断及名称获取函数保持不变 (它们已经使用新浪源了) ----
 def generate_ai_report(symbol, name, reports_df, signals):
     try:
         from ai_module import call_ai_for_stock_diagnosis
@@ -119,7 +123,6 @@ def generate_ai_report(symbol, name, reports_df, signals):
 def get_stock_names_batch(codes):
     if not codes: return {}
     sina_codes = [f"{'s_sh' if c.strip().startswith('6') else 's_sz'}{c.strip()}" for c in codes]
-    mapping = {f"{'s_sh' if c.strip().startswith('6') else 's_sz'}{c.strip()}": c.strip() for c in codes}
     url = f"https://hq.sinajs.cn/list={','.join(sina_codes)}"
     headers = {'Referer': 'https://finance.sina.com.cn/'}
     name_map = {}
@@ -129,9 +132,8 @@ def get_stock_names_batch(codes):
             if '="' in line:
                 key = line.split('=')[0].split('_')[-1]
                 name = line.split('="')[1].split(',')[0]
-                # 模糊匹配映射
-                for k, v in mapping.items():
-                    if k.endswith(key): name_map[v] = name
+                for c in codes:
+                    if c.strip() in key: name_map[c.strip()] = name
     except: pass
     return name_map
 
