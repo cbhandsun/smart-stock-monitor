@@ -1,0 +1,8 @@
+__pycache__/
+.env
+venv/
+reports/
+*.log
+*.pyc
+.ipynb_checkpoints/
+.streamlit/
