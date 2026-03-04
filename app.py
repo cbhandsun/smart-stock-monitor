@@ -33,14 +33,14 @@ st.set_page_config(
 # ---- Language Dictionary ----
 LANG_MAP = {
     "zh": {
-        "title": "SSM 智投终端", "subtitle": "Quantum Intelligence v4.1",
+        "title": "SSM 智投终端", "subtitle": "Quantum Intelligence v4.2",
         "market_discovery": "📡 实时信号流", "dna_analysis": "🧬 深度决策中心",
         "strat_capture": "策略捕捉引擎", "invoke_ai": "启动多模态 AI 研判",
         "overweight": "建议增持", "hold": "建议观察", "select_invoke": "请锁定标的以启动分析",
         "fin_health": "财务健康分", "rsi_strength": "相对强度(RSI)", "ann_vol": "年化波动率", "agent_verdict": "智能演算结论"
     },
     "en": {
-        "title": "SSM Quantum", "subtitle": "Quantum Intelligence v4.1",
+        "title": "SSM Quantum", "subtitle": "Quantum Intelligence v4.2",
         "market_discovery": "📡 Signal Stream", "dna_analysis": "🧬 Decision Center",
         "strat_capture": "Strategy Engine", "invoke_ai": "Invoke Multi-modal AI",
         "overweight": "Overweight", "hold": "Neutral", "select_invoke": "Select Target for Synthesis",
@@ -52,7 +52,7 @@ if 'lang' not in st.session_state: st.session_state['lang'] = 'zh'
 if 'selected_stock' not in st.session_state: st.session_state['selected_stock'] = "601318"
 L = LANG_MAP[st.session_state['lang']]
 
-# ---- ULTIMATE ACCESSIBILITY STYLING (v4.1) ----
+# ---- ACCESSIBILITY & CONTRAST FIX (v4.2) ----
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono&display=swap');
@@ -75,7 +75,7 @@ st.markdown("""
         color: var(--text-primary);
     }
 
-    /* Metric Cards - High Contrast */
+    /* Metric Cards - Fix Invisible Labels */
     div[data-testid="stMetric"] {
         background: var(--card-bg) !important;
         border: 1px solid #334155 !important;
@@ -83,41 +83,58 @@ st.markdown("""
         padding: 20px !important;
     }
     div[data-testid="stMetricLabel"] > div {
-        color: var(--text-secondary) !important;
-        font-weight: 600 !important;
+        color: #60a5fa !important; /* Bright blue for labels to be visible */
+        font-weight: 700 !important;
+        font-size: 0.9rem !important;
     }
     div[data-testid="stMetricValue"] > div {
-        color: var(--text-primary) !important;
+        color: white !important;
     }
 
-    /* Sidebar - Ultimate Contrast */
+    /* Sidebar - Fix Invisible Buttons & Contrast */
     [data-testid="stSidebar"] {
         background-color: var(--sidebar-bg) !important;
         border-right: 1px solid #1e293b;
     }
-    [data-testid="stSidebar"] * {
-        color: var(--text-primary) !important;
-    }
-    [data-testid="stSidebar"] small {
-        color: var(--text-secondary) !important;
-    }
     
-    /* Input/Dropdown in Sidebar Fix */
-    [data-testid="stSidebar"] div[data-baseweb="select"] > div,
-    [data-testid="stSidebar"] input {
+    /* Fix Sidebar Buttons (Language switch and delete buttons) */
+    [data-testid="stSidebar"] button {
         background-color: #1e293b !important;
         color: white !important;
         border: 1px solid #334155 !important;
+        transition: all 0.2s;
+    }
+    [data-testid="stSidebar"] button:hover {
+        border-color: var(--accent) !important;
+        background-color: #334155 !important;
+    }
+    
+    /* Fix Sidebar Title/Labels */
+    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3, 
+    [data-testid="stSidebar"] p, [data-testid="stSidebar"] label, [data-testid="stSidebar"] span {
+        color: #f1f5f9 !important;
     }
 
-    /* Tab Switcher */
+    /* Strategy Color Blocks - Fix Invisible Text */
+    .strat-banner {
+        padding: 12px;
+        border-radius: 10px;
+        color: white !important;
+        font-weight: 700;
+        margin-bottom: 10px;
+    }
+    .strat-banner b, .strat-banner span {
+        color: white !important;
+    }
+
+    /* Tabs Styling */
     .stTabs [data-baseweb="tab-list"] {
         background: #1e293b;
         padding: 8px;
         border-radius: 12px;
     }
     .stTabs [data-baseweb="tab"] {
-        color: var(--text-secondary) !important;
+        color: #94a3b8 !important;
         font-weight: 600;
     }
     .stTabs [data-baseweb="tab"][aria-selected="true"] {
@@ -126,7 +143,7 @@ st.markdown("""
         border-radius: 8px;
     }
 
-    /* AI Report Box */
+    /* AI Report Text */
     .ai-box {
         background: #1e293b;
         border-left: 4px solid var(--accent);
@@ -134,12 +151,6 @@ st.markdown("""
         border-radius: 8px;
         color: #e2e8f0;
         line-height: 1.8;
-        font-size: 1rem;
-    }
-    
-    /* Code Font for Data */
-    .code-font {
-        font-family: 'JetBrains Mono', monospace;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -165,10 +176,11 @@ def load_cached_report(symbol):
 with st.sidebar:
     st.markdown(f"## {L['title']}\n<span style='color:#94a3b8'>{L['subtitle']}</span>", unsafe_allow_html=True)
     
+    # Lang Switch with explicit contrast
     l1, l2 = st.columns(2)
-    if l1.button("中文", use_container_width=True, key="btn_zh"):
+    if l1.button("中文", use_container_width=True, key="btn_zh_v2"):
         st.session_state['lang'] = 'zh'; st.rerun()
-    if l2.button("EN", use_container_width=True, key="btn_en"):
+    if l2.button("EN", use_container_width=True, key="btn_en_v2"):
         st.session_state['lang'] = 'en'; st.rerun()
     
     st.divider()
@@ -178,13 +190,14 @@ with st.sidebar:
     st.markdown("### 💠 Workspace")
     for s in my_stocks:
         c1, c2 = st.columns([4, 1])
-        c1.markdown(f"<span style='color:#60a5fa;font-weight:700'>{s}</span> {name_map.get(s, '')}", unsafe_allow_html=True)
-        if c2.button("×", key=f"del_{s}"):
+        c1.markdown(f"<div style='padding-top:5px'><span style='color:#60a5fa;font-weight:700'>{s}</span> <span style='color:#f1f5f9'>{name_map.get(s, '')}</span></div>", unsafe_allow_html=True)
+        # Explicit delete button style
+        if c2.button("×", key=f"del_v2_{s}", help="Remove"):
             my_stocks.remove(s); save_watchlist(my_stocks); st.rerun()
     
     with st.expander("Register Symbol"):
-        code = st.text_input("Enter Code", key="add_input")
-        if st.button("Add to Monitor", use_container_width=True):
+        code = st.text_input("Enter Code", key="add_input_v2")
+        if st.button("Add to Monitor", use_container_width=True, key="add_btn_v2"):
             if code and code not in my_stocks:
                 my_stocks.append(code); save_watchlist(my_stocks); st.rerun()
 
@@ -197,13 +210,15 @@ with tab_stream:
     if not ov.empty:
         cols = st.columns(len(ov))
         for i, r in enumerate(ov.itertuples()):
+            # Metric labels are now fixed via CSS
             cols[i].metric(r.名称, f"{r.最新价:,.1f}", f"{r.涨跌幅:+.2f}%")
 
     st.markdown(f"### {L['strat_capture']}")
     sc1, sc2, sc3 = st.columns(3)
-    with sc1: st.markdown("<div style='background:#1e3a8a;padding:12px;border-radius:10px;border-left:4px solid #3b82f6'><b>💎 Value Discovery</b></div>", unsafe_allow_html=True)
-    with sc2: st.markdown("<div style='background:#064e3b;padding:12px;border-radius:10px;border-left:4px solid #10b981'><b>🔥 Momentum Max</b></div>", unsafe_allow_html=True)
-    with sc3: st.markdown("<div style='background:#78350f;padding:12px;border-radius:10px;border-left:4px solid #f59e0b'><b>🌟 Growth Star</b></div>", unsafe_allow_html=True)
+    # Using strat-banner class for guaranteed white text on color background
+    with sc1: st.markdown("<div class='strat-banner' style='background:#1e3a8a; border-left:4px solid #3b82f6'>💎 Value Discovery</div>", unsafe_allow_html=True)
+    with sc2: st.markdown("<div class='strat-banner' style='background:#064e3b; border-left:4px solid #10b981'>🔥 Momentum Max</div>", unsafe_allow_html=True)
+    with sc3: st.markdown("<div class='strat-banner' style='background:#78350f; border-left:4px solid #f59e0b'>🌟 Growth Star</div>", unsafe_allow_html=True)
     
     strat = st.segmented_control("Capture Mode", ["Value", "Momentum", "Growth"], default="Value", label_visibility="collapsed")
     df = find_value_stocks() if strat == "Value" else find_momentum_stocks() if strat == "Momentum" else find_growth_stocks()
@@ -213,20 +228,16 @@ with tab_stream:
         res = st.data_editor(df, hide_index=True, use_container_width=True)
         sel = res[res["📌"] == True]
         if not sel.empty:
-            if st.button("Sync to Workspace", type="primary", use_container_width=True):
+            if st.button("Sync to Workspace", type="primary", use_container_width=True, key="sync_btn_v2"):
                 added = [c for c in sel['代码'] if c not in my_stocks]
                 my_stocks.extend(added); save_watchlist(my_stocks); st.toast("Synced to Terminal Workspace"); st.rerun()
-            if len(sel) == 1:
-                st.session_state['selected_stock'] = sel.iloc[0]['代码']
-                st.info(f"Locked Target: {st.session_state['selected_stock']}")
 
 with tab_diag:
     target = st.session_state['selected_stock']
     if target not in my_stocks: my_stocks.insert(0, target)
-    sel_stock = st.selectbox("Decision Target", my_stocks, index=my_stocks.index(target), format_func=lambda x: f"{x} {name_map.get(x, '')}")
+    sel_stock = st.selectbox("Decision Target", my_stocks, index=my_stocks.index(target), format_func=lambda x: f"{x} {name_map.get(x, '')}", key="target_sel_v2")
     st.session_state['selected_stock'] = sel_stock
     
-    # Financial DNA
     f_data = get_financial_health_score(sel_stock) if get_financial_health_score else None
     kline = fetch_kline("sh"+sel_stock if sel_stock.startswith('6') else "sz"+sel_stock)
     q_metrics = calculate_metrics(kline) if calculate_metrics else {}
@@ -249,16 +260,13 @@ with tab_diag:
 
     with ai_col:
         cached, is_cached = load_cached_report(sel_stock)
-        if st.button(L['invoke_ai'], type="primary", use_container_width=True):
-            with st.spinner("Synthesizing multi-source signals..."):
+        if st.button(L['invoke_ai'], type="primary", use_container_width=True, key="invoke_ai_v2"):
+            with st.spinner("Reasoning..."):
                 rep = generate_ai_report(sel_stock, name_map.get(sel_stock, ''), fetch_research_reports(sel_stock), fetch_trading_signals("sh"+sel_stock if sel_stock.startswith('6') else "sz"+sel_stock))
                 st.markdown(f"<div class='ai-box'>{rep}</div>", unsafe_allow_html=True)
                 os.makedirs(f"{REPORT_DIR}/{datetime.datetime.now().strftime('%Y-%m-%d')}", exist_ok=True)
                 with open(f"{REPORT_DIR}/{datetime.datetime.now().strftime('%Y-%m-%d')}/{sel_stock}.md", "w") as f: f.write(rep)
-        elif is_cached:
-            st.markdown(f"<div class='ai-box'>{cached}</div>", unsafe_allow_html=True)
-        else:
-            st.info(L['select_invoke'])
+        elif is_cached: st.markdown(f"<div class='ai-box'>{cached}</div>", unsafe_allow_html=True)
 
 st.divider()
-st.caption("Quantum SSM v4.1 | Optimized for High Contrast and Financial Accessibility")
+st.caption("Quantum SSM v4.2 | Critical Contrast & Accessibility Overhaul")
