@@ -12,6 +12,33 @@ import streamlit as st
 import requests
 import time
 import re
+import datetime
+import json
+
+CACHE_DIR = "/home/node/.openclaw/workspace-dev/smart-stock-monitor/cache"
+os.makedirs(CACHE_DIR, exist_ok=True)
+
+def get_cache_path(key):
+    date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+    return os.path.join(CACHE_DIR, f"{key}_{date_str}.json")
+
+def load_from_cache(key):
+    path = get_cache_path(key)
+    if os.path.exists(path):
+        try:
+            with open(path, 'r') as f:
+                data = json.load(f)
+                return pd.DataFrame(data)
+        except: pass
+    return None
+
+def save_to_cache(key, df):
+    if df is None or df.empty: return
+    path = get_cache_path(key)
+    try:
+        # Convert to records to avoid orientation issues
+        df.to_json(path, orient='records', force_ascii=False)
+    except: pass
 
 @st.cache_data(ttl=300, show_spinner=False)
 def get_market_overview():
@@ -37,7 +64,6 @@ def get_market_overview():
 def fetch_sina_market_snapshot(page=1):
     """通过新浪财经接口抓取全市场快照 (作为 AkShare 失效时的备选)"""
     url = f"https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData?page={page}&num=80&sort=changepercent&asc=0&node=hs_a&symbol=&_s_r_a=init"
-    # For this specific request, we might want to bypass proxy if it's already working
     try:
         r = requests.get(url, timeout=5)
         text = r.text
@@ -58,7 +84,12 @@ def fetch_sina_market_snapshot(page=1):
     return pd.DataFrame()
 
 def get_full_market_data():
-    """抓取全市场快照"""
+    """抓取全市场快照 (优先从当日缓存读取)"""
+    cache_key = "full_market_snapshot"
+    cached_df = load_from_cache(cache_key)
+    if cached_df is not None:
+        return cached_df
+
     df = pd.DataFrame()
     # 尝试 EM 源 (AkShare)
     try:
@@ -74,9 +105,12 @@ def get_full_market_data():
             time.sleep(0.5)
         if pages:
             df = pd.concat(pages, ignore_index=True)
+    
+    if not df.empty:
+        save_to_cache(cache_key, df)
     return df
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=86400, show_spinner=False) # Streamlit cache extended to 24h
 def find_value_stocks(pe_max=25, pb_max=2.5):
     df = get_full_market_data()
     if df.empty: return pd.DataFrame()
@@ -94,7 +128,7 @@ def find_value_stocks(pe_max=25, pb_max=2.5):
         return res[['代码', '名称', '最新价', '涨跌幅', pe_col, pb_col]].rename(columns={pe_col: 'PE', pb_col: 'PB'})
     except: return pd.DataFrame()
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=86400, show_spinner=False)
 def find_momentum_stocks():
     df = get_full_market_data()
     if df.empty: return pd.DataFrame()
@@ -105,7 +139,7 @@ def find_momentum_stocks():
         return filtered.sort_values(by='涨跌幅', ascending=False).head(15)[['代码', '名称', '最新价', '涨跌幅', '成交额']]
     except: return pd.DataFrame()
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=86400, show_spinner=False)
 def find_growth_stocks():
     df = get_full_market_data()
     if df.empty: return pd.DataFrame()
