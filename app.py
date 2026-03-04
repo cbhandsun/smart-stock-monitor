@@ -131,18 +131,21 @@ if 'selected_stock' not in st.session_state:
 
 L = LANG_MAP[st.session_state['lang']]
 
-# Custom Glassmorphism & Modern UI CSS (Fixed Accessibility)
+# Custom Glassmorphism & Modern UI CSS (Deep Accessibility Overhaul)
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=JetBrains+Mono&display=swap');
     
     :root {
         --primary: #3b82f6;
+        --primary-light: #60a5fa;
         --bg-main: #fcfdfe;
-        --card-bg: rgba(255, 255, 255, 0.9);
+        --card-bg: rgba(255, 255, 255, 0.95);
         --glass-border: rgba(226, 232, 240, 0.8);
         --text-dark: #1e293b;
         --sidebar-bg: #0f172a;
+        --sidebar-text: #f1f5f9;
+        --sidebar-muted: #94a3b8;
     }
 
     html, body, [class*="css"] {
@@ -164,26 +167,56 @@ st.markdown("""
         box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05) !important;
     }
     div[data-testid="stMetricLabel"] > div {
-        color: #64748b !important;
+        color: #475569 !important;
         font-weight: 600 !important;
     }
 
-    /* Sidebar Fix - Contrast & Visibility */
+    /* Sidebar - ULTIMATE CONTRAST FIX */
     [data-testid="stSidebar"] {
         background: var(--sidebar-bg) !important;
         border-right: 1px solid #1e293b;
     }
     
-    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3, [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {
-        color: #f8fafc !important;
+    /* Target all possible text containers in sidebar */
+    [data-testid="stSidebar"] .stMarkdown p, 
+    [data-testid="stSidebar"] .stMarkdown span,
+    [data-testid="stSidebar"] .stMarkdown h1,
+    [data-testid="stSidebar"] .stMarkdown h2,
+    [data-testid="stSidebar"] .stMarkdown h3,
+    [data-testid="stSidebar"] label,
+    [data-testid="stSidebar"] .stExpander p {
+        color: var(--sidebar-text) !important;
     }
     
-    /* Sidebar Selectbox/Input Text Color */
-    [data-testid="stSidebar"] div[data-baseweb="select"] > div {
-        color: #1e293b !important; /* Keep dropdown text dark for readability against white bg */
+    /* Input/Selectbox labels specifically */
+    [data-testid="stSidebar"] label[data-testid="stWidgetLabel"] p {
+        color: var(--sidebar-text) !important;
+        font-weight: 500 !important;
     }
 
-    /* Tab Modernization Fix */
+    /* Input fields in sidebar - ensure white text on dark background or proper contrast */
+    [data-testid="stSidebar"] div[data-baseweb="input"] {
+        background-color: #1e293b !important;
+        border: 1px solid #334155 !important;
+    }
+    [data-testid="stSidebar"] input {
+        color: white !important;
+    }
+    
+    /* Buttons in sidebar */
+    [data-testid="stSidebar"] button {
+        border-color: #334155 !important;
+    }
+    [data-testid="stSidebar"] button[kind="secondary"] {
+        background-color: #1e293b !important;
+        color: var(--sidebar-text) !important;
+    }
+    [data-testid="stSidebar"] button[kind="primary"] {
+        background-color: var(--primary) !important;
+        color: white !important;
+    }
+
+    /* Tab Modernization */
     .stTabs [data-baseweb="tab-list"] {
         background: #f1f5f9;
         padding: 8px;
@@ -193,7 +226,6 @@ st.markdown("""
     .stTabs [data-baseweb="tab"] {
         border-radius: 8px !important;
         padding: 8px 24px !important;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         color: #64748b !important;
     }
     .stTabs [data-baseweb="tab"][aria-selected="true"] {
@@ -205,22 +237,7 @@ st.markdown("""
         display: none;
     }
 
-    /* Button Contrast Fix */
-    .stButton > button {
-        font-weight: 600 !important;
-    }
-    .stButton > button[kind="primary"] {
-        background-color: var(--primary) !important;
-        color: white !important;
-        border: none !important;
-    }
-    .stButton > button[kind="secondary"] {
-        background-color: white !important;
-        color: var(--text-dark) !important;
-        border: 1px solid var(--glass-border) !important;
-    }
-
-    /* AI Bubble Accessibility */
+    /* AI Bubble */
     .ai-bubble {
         background: white;
         border: 1px solid #e2e8f0;
@@ -229,16 +246,6 @@ st.markdown("""
         line-height: 1.8;
         font-size: 1rem;
         color: #334155;
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.04);
-    }
-    
-    /* Segmented Control Fix */
-    div[data-testid="stSegmentedControl"] button {
-        color: #475569 !important;
-    }
-    div[data-testid="stSegmentedControl"] button[aria-checked="true"] {
-        color: white !important;
-        background-color: var(--primary) !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -270,12 +277,12 @@ def load_cached_report(symbol):
 with st.sidebar:
     st.markdown(f"<div style='padding: 20px 0;'><h2 style='letter-spacing: -1px; margin-bottom: 0;'>{L['title']}</h2><p style='color: #94a3b8; font-size: 0.85rem;'>{L['subtitle']}</p></div>", unsafe_allow_html=True)
     
-    # Language Switch (Visual distinction)
+    # Language Switch
     l_c1, l_c2 = st.columns(2)
-    if l_c1.button("中文", use_container_width=True, type="primary" if st.session_state['lang'] == 'zh' else "secondary"):
+    if l_c1.button("中文", use_container_width=True, key="lang_zh", type="primary" if st.session_state['lang'] == 'zh' else "secondary"):
         st.session_state['lang'] = 'zh'
         st.rerun()
-    if l_c2.button("English", use_container_width=True, type="primary" if st.session_state['lang'] == 'en' else "secondary"):
+    if l_c2.button("English", use_container_width=True, key="lang_en", type="primary" if st.session_state['lang'] == 'en' else "secondary"):
         st.session_state['lang'] = 'en'
         st.rerun()
 
@@ -286,7 +293,8 @@ with st.sidebar:
     for stock in my_stocks:
         with st.container():
             c1, c2 = st.columns([5, 1])
-            c1.markdown(f"<span style='font-size: 0.9rem; font-weight: 600; color: #f8fafc;'>{stock}</span> <span style='color: #94a3b8; font-size: 0.8rem;'>{name_map.get(stock, '')}</span>", unsafe_allow_html=True)
+            # Use safe hex colors to ensure rendering
+            c1.markdown(f"<div style='margin: 4px 0;'><span style='font-size: 0.9rem; font-weight: 600; color: #F1F5F9;'>{stock}</span> <span style='color: #94A3B8; font-size: 0.8rem;'>{name_map.get(stock, '')}</span></div>", unsafe_allow_html=True)
             if c2.button("×", key=f"rm_{stock}", help="Remove"):
                 my_stocks.remove(stock)
                 save_watchlist(my_stocks)
@@ -294,8 +302,8 @@ with st.sidebar:
 
     st.divider()
     with st.expander(L['add_symbol']):
-        add_code = st.text_input(L['code'], placeholder=L['symbol_placeholder'], label_visibility="collapsed")
-        if st.button(L['register_btn'], use_container_width=True):
+        add_code = st.text_input(L['code'], placeholder=L['symbol_placeholder'], key="add_input_sidebar")
+        if st.button(L['register_btn'], use_container_width=True, key="add_btn_sidebar"):
             if add_code and add_code not in my_stocks:
                 my_stocks.append(add_code)
                 save_watchlist(my_stocks)
@@ -332,7 +340,6 @@ with tab_main:
     with c3:
         st.markdown(f"<div style='background: #fffbeb; border-radius: 12px; padding: 15px; border: 1px solid #fef3c7;'><b style='color: #92400e;'>{L['strat_growth']}</b><p style='margin:0; font-size: 0.8rem; color: #f59e0b;'>{L['strat_growth_desc']}</p></div>", unsafe_allow_html=True)
 
-    # UI fix for segmented control selection color
     strat_key = st.segmented_control(L['engine_label'], ["Value", "Momentum", "Growth"], default="Value", label_visibility="collapsed")
     
     if strat_key == "Value": df = find_value_stocks()
@@ -358,7 +365,7 @@ with tab_main:
         sel = res[res[L['track']] == True]
         if not sel.empty:
             scol1, scol2 = st.columns([1, 4])
-            if scol1.button(L['register_selected'], type="primary", use_container_width=True):
+            if scol1.button(L['register_selected'], type="primary", use_container_width=True, key="reg_bulk_main"):
                 new = [c for c in sel['代码'] if c not in my_stocks]
                 if new:
                     my_stocks.extend(new)
@@ -410,7 +417,7 @@ with tab_diag:
 
     with c_report:
         cached, is_cached = load_cached_report(sel_stock)
-        if st.button(L['invoke_ai'], type="primary", use_container_width=True):
+        if st.button(L['invoke_ai'], type="primary", use_container_width=True, key="invoke_ai_final"):
             with st.spinner(L['synthesizing']):
                 rep = generate_ai_report(sel_stock, name_map.get(sel_stock, ''), fetch_research_reports(sel_stock), fetch_trading_signals("sh"+sel_stock if sel_stock.startswith('6') else "sz"+sel_stock))
                 st.markdown(f"<div class='ai-bubble'>{rep}</div>", unsafe_allow_html=True)
