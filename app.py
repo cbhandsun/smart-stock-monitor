@@ -46,6 +46,12 @@ def load_cached_report(symbol):
 
 st.set_page_config(page_title="Smart Stock Monitor Pro", layout="wide", page_icon="🚀")
 
+# ---- Session State Initialization ----
+if 'active_tab' not in st.session_state:
+    st.session_state['active_tab'] = "📊 策略选股中心"
+if 'selected_stock' not in st.session_state:
+    st.session_state['selected_stock'] = "601318"
+
 # ---- Sidebar ----
 with st.sidebar:
     st.title("⚙️ 智能投研配置")
@@ -83,10 +89,20 @@ with st.sidebar:
         st.metric("离岸人民币", f"{cnh.get('price',0):.4f}")
 
 # ---- Main ----
-st.title("🚀 Smart Stock Monitor Pro v2.2")
-tab1, tab2 = st.tabs(["📊 策略选股中心", "🧠 个股深度诊断"])
+st.title("🚀 Smart Stock Monitor Pro v2.3")
 
-with tab1:
+# Use session state to control tabs indirectly if needed, or just standard tabs
+tab_list = ["📊 策略选股中心", "🧠 个股深度诊断"]
+active_tab = st.session_state.get('active_tab', tab_list[0])
+# We use a trick to force tab selection via session state if they click "Go to Diagnosis"
+# However, Streamlit tabs don't have a direct 'index' parameter controlled by session state easily in v1.x
+# So we'll use a radio-button style tab selector if we want full programmatic control, 
+# or just stick to standard tabs and let the user switch.
+# To make it "feel" like a jump, we'll use session state for the selected stock.
+
+tabs = st.tabs(tab_list)
+
+with tabs[0]:
     st.header("📈 今日大盘趋势")
     try:
         ov = get_market_overview()
@@ -100,22 +116,60 @@ with tab1:
     st.header("🎯 智能选股策略库")
     strategy = st.radio("选择选股逻辑", ["价值挖掘 (低估值)", "趋势波段 (强动能)", "成长之星 (大蓝筹)"], horizontal=True)
     
+    df_display = pd.DataFrame()
     if strategy == "价值挖掘 (低估值)":
         st.subheader("💎 价值挖掘：低 PE / 低 PB 标的")
-        df_val = find_value_stocks()
-        st.dataframe(df_val, use_container_width=True)
+        df_display = find_value_stocks()
     elif strategy == "趋势波段 (强动能)":
         st.subheader("🔥 趋势波段：近期涨幅稳健 + 成交活跃")
-        df_mom = find_momentum_stocks()
-        st.dataframe(df_mom, use_container_width=True)
+        df_display = find_momentum_stocks()
     else:
         st.subheader("🌟 成长之星：高权重大市值 + 稳健走势")
-        df_gro = find_growth_stocks()
-        st.dataframe(df_gro, use_container_width=True)
+        df_display = find_growth_stocks()
 
-with tab2:
+    if not df_display.empty:
+        # We'll use columns to add "Action" buttons for each row
+        # Or more simply, a selectbox below the table to "Pick and Jump"
+        st.dataframe(df_display, use_container_width=True)
+        
+        st.markdown("#### ⚡ 快速操作")
+        cols = st.columns([2, 1, 1])
+        pick_stock = cols[0].selectbox("从上方列表中选择股票", df_display['代码'].tolist(), 
+                                      format_func=lambda x: f"{x} | {df_display[df_display['代码']==x]['名称'].values[0]}",
+                                      key="strategy_picker")
+        
+        if cols[1].button("⭐ 加入自选", use_container_width=True):
+            if pick_stock not in my_stocks:
+                my_stocks.append(pick_stock)
+                save_watchlist(my_stocks)
+                st.toast(f"已加入自选: {pick_stock}")
+                st.rerun()
+            else:
+                st.toast("已在自选列表中")
+                
+        if cols[2].button("🔍 深度诊断", use_container_width=True, type="primary"):
+            st.session_state['selected_stock'] = pick_stock
+            # If they are already in my_stocks, great. If not, we should temporary allow diagnosis?
+            # For now, let's auto-add to my_stocks to ensure it shows up in Tab 2 selectbox
+            if pick_stock not in my_stocks:
+                my_stocks.append(pick_stock)
+                save_watchlist(my_stocks)
+            st.success(f"正在切换至 {pick_stock} 的深度诊断... 请手动点击上方 '🧠 个股深度诊断' 标签")
+            # Note: Streamlit tabs can't be switched programmatically yet without complex hacks
+            # We'll set the session state and tell the user.
+
+with tabs[1]:
     st.header("🔍 深度诊断工作台")
-    sel_stock = st.selectbox("选择自选股", my_stocks, format_func=format_stock)
+    
+    # Sync with session state if jump happened
+    current_idx = 0
+    if st.session_state['selected_stock'] in my_stocks:
+        current_idx = my_stocks.index(st.session_state['selected_stock'])
+    
+    sel_stock = st.selectbox("选择自选股", my_stocks, index=current_idx, format_func=format_stock, key="main_diagnosis_select")
+    # Update session state when user changes manually
+    st.session_state['selected_stock'] = sel_stock
+    
     cached_report, is_cached = load_cached_report(sel_stock)
     
     col_btn, col_info = st.columns([1, 3])
@@ -159,4 +213,4 @@ with tab2:
             st.metric("年化波动率", f"{q_metrics.get('volatility_ann'):.1f}%")
 
 st.divider()
-st.caption("Smart Stock Monitor Pro v2.2 | Powered by Gemini & Sina Finance")
+st.caption("Smart Stock Monitor Pro v2.3 | Powered by Gemini & Sina Finance")
