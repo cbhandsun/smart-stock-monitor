@@ -13,6 +13,27 @@ import requests
 import time
 import re
 
+@st.cache_data(ttl=300, show_spinner=False)
+def get_market_overview():
+    """获取市场指数概览 (新浪源)"""
+    try:
+        url = "https://hq.sinajs.cn/list=s_sh000001,s_sz399001,s_sz399006"
+        headers = {'Referer': 'https://finance.sina.com.cn/'}
+        resp = requests.get(url, headers=headers, timeout=5)
+        text = resp.text
+        data = []
+        for line in text.strip().split(';'):
+            if '="' in line:
+                key, val = line.split('="')
+                val = val.strip('"')
+                parts = val.split(',')
+                if len(parts) > 3:
+                    data.append({'名称': parts[0], '最新价': float(parts[1]), '涨跌幅': float(parts[3])})
+        df = pd.DataFrame(data)
+        if not df.empty: return df
+    except: pass
+    return pd.DataFrame(columns=['名称', '最新价', '涨跌幅'])
+
 def fetch_sina_market_snapshot(page=1):
     """通过新浪财经接口抓取全市场快照 (作为 AkShare 失效时的备选)"""
     url = f"https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData?page={page}&num=80&sort=changepercent&asc=0&node=hs_a&symbol=&_s_r_a=init"
