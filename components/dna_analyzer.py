@@ -322,52 +322,63 @@ def _render_tech_observation(kline, q_metrics, stock_name, stock_code):
     action_html = "".join([_item(t) for t in action_items])
     price_html = "".join([_item(t) for t in price_levels]) if price_levels else ""
 
+    # 构建关键价位 HTML（单独处理，避免 f-string 嵌套引号问题）
+    price_section = ""
+    if price_html:
+        price_section = (
+            '<div style="margin-top: 12px; padding-top: 10px; '
+            'border-top: 1px solid rgba(255,255,255,0.06);">'
+            '<div style="font-size: 0.85rem; font-weight: 600; '
+            'color: #94a3b8; margin-bottom: 6px;">关键价位：</div>'
+            '<div style="color: #cbd5e1; font-size: 0.82rem; '
+            f'line-height: 1.7;">{price_html}</div></div>'
+        )
+
+    # 根据评分确定边框颜色
+    if score <= -3:
+        border_rgb = "239,68,68"
+    elif score >= 3:
+        border_rgb = "245,158,11"
+    else:
+        border_rgb = "148,163,184"
+
     col1, col2 = st.columns(2)
 
     # 左列：K线形态 + 技术指标
     with col1:
-        st.markdown(f"""
-<div style="background: linear-gradient(145deg, rgba(30,41,59,0.6), rgba(15,23,42,0.7));
-     border: 1px solid rgba(56,189,248,0.15); border-radius: 14px; padding: 20px;">
-    <div style="font-size: 0.95rem; font-weight: 700; color: #f1f5f9; margin-bottom: 12px;
-         font-family: 'Outfit', sans-serif;">K线形态分析：</div>
-    <div style="color: #cbd5e1; font-size: 0.82rem; line-height: 1.7;">{kline_html}</div>
-
-    <div style="font-size: 0.95rem; font-weight: 700; color: #f1f5f9; margin-top: 16px; margin-bottom: 10px;
-         padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.06);
-         font-family: 'Outfit', sans-serif;">技术指标研判：</div>
-    <div style="color: #cbd5e1; font-size: 0.82rem; line-height: 1.7;">{indicator_html}</div>
-</div>
-""", unsafe_allow_html=True)
+        left_html = (
+            '<div style="background: linear-gradient(145deg, rgba(30,41,59,0.6), rgba(15,23,42,0.7));'
+            ' border: 1px solid rgba(56,189,248,0.15); border-radius: 14px; padding: 20px;">'
+            '<div style="font-size: 0.95rem; font-weight: 700; color: #f1f5f9;'
+            ' margin-bottom: 12px;">K线形态分析：</div>'
+            f'<div style="color: #cbd5e1; font-size: 0.82rem; line-height: 1.7;">{kline_html}</div>'
+            '<div style="font-size: 0.95rem; font-weight: 700; color: #f1f5f9;'
+            ' margin-top: 16px; margin-bottom: 10px; padding-top: 12px;'
+            ' border-top: 1px solid rgba(255,255,255,0.06);">技术指标研判：</div>'
+            f'<div style="color: #cbd5e1; font-size: 0.82rem; line-height: 1.7;">{indicator_html}</div>'
+            '</div>'
+        )
+        st.markdown(left_html, unsafe_allow_html=True)
 
     # 右列：买点评估
     with col2:
-        st.markdown(f"""
-<div style="background: linear-gradient(145deg, rgba(30,41,59,0.6), rgba(15,23,42,0.7));
-     border: 1px solid rgba({('239,68,68' if score <= -3 else '245,158,11' if score >= 3 else '148,163,184')},0.25);
-     border-left: 4px solid {signal_color}; border-radius: 14px; padding: 20px;">
-
-    <div style="font-size: 0.95rem; font-weight: 700; color: #f1f5f9; margin-bottom: 6px;
-         font-family: 'Outfit', sans-serif;">
-        买点评估：
-        <span style="color: {signal_color}; margin-left: 8px; font-size: 1rem;">
-            {signal_icon} {signal_text}
-        </span>
-    </div>
-    <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 12px;">
-        综合得分 {score:+d} | {action_intro}
-    </div>
-
-    <div style="color: #cbd5e1; font-size: 0.82rem; line-height: 1.7;">{action_html}</div>
-
-    {"<div style='margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.06);'><div style=" + '"font-size: 0.85rem; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">关键价位：</div><div style="color: #cbd5e1; font-size: 0.82rem; line-height: 1.7;">' + price_html + "</div></div>" if price_html else ""}
-
-    <div style="color: #64748b; font-size: 0.68rem; margin-top: 14px; padding-top: 8px;
-         border-top: 1px solid rgba(255,255,255,0.05);">
-        ⚠️ 算法自动生成，仅供参考，不构成投资建议
-    </div>
-</div>
-""", unsafe_allow_html=True)
+        right_html = (
+            f'<div style="background: linear-gradient(145deg, rgba(30,41,59,0.6), rgba(15,23,42,0.7));'
+            f' border: 1px solid rgba({border_rgb},0.25);'
+            f' border-left: 4px solid {signal_color}; border-radius: 14px; padding: 20px;">'
+            f'<div style="font-size: 0.95rem; font-weight: 700; color: #f1f5f9; margin-bottom: 6px;">'
+            f'买点评估：<span style="color: {signal_color}; margin-left: 8px;'
+            f' font-size: 1rem;">{signal_icon} {signal_text}</span></div>'
+            f'<div style="font-size: 0.75rem; color: #64748b; margin-bottom: 12px;">'
+            f'综合得分 {score:+d} | {action_intro}</div>'
+            f'<div style="color: #cbd5e1; font-size: 0.82rem; line-height: 1.7;">{action_html}</div>'
+            f'{price_section}'
+            '<div style="color: #64748b; font-size: 0.68rem; margin-top: 14px;'
+            ' padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05);">'
+            '⚠️ 算法自动生成，仅供参考，不构成投资建议</div>'
+            '</div>'
+        )
+        st.markdown(right_html, unsafe_allow_html=True)
 
 
 
