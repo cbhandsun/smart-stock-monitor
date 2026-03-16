@@ -59,146 +59,316 @@ def _create_indicator_chart(data, name, theme="dark"):
 
 
 def _render_tech_observation(kline, q_metrics, stock_name, stock_code):
-    """渲染技术观察 + 策略建议面板"""
+    """渲染深度技术分析面板：K线形态 + 技术指标 + 买点评估"""
     import pandas as pd
+    import re
 
-    if kline is None or kline.empty or len(kline) < 2:
+    if kline is None or kline.empty or len(kline) < 3:
         return
+
+    def _b(text):
+        """markdown bold → HTML strong"""
+        return re.sub(r'\*\*(.+?)\*\*', r'<strong style="color:#f1f5f9">\1</strong>', text)
+
+    def _item(text):
+        return f'<div style="padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.03);">• {_b(text)}</div>'
 
     latest = kline.iloc[-1]
     prev = kline.iloc[-2]
 
+    close_p = float(latest.get('收盘', 0))
     open_p = float(latest.get('开盘', 0))
     high_p = float(latest.get('最高', 0))
     low_p = float(latest.get('最低', 0))
-    close_p = float(latest.get('收盘', 0))
     volume = float(latest.get('成交量', 0))
     prev_close = float(prev.get('收盘', 0))
     prev_volume = float(prev.get('成交量', 1))
 
-    # ---- 技术观察 ----
-    observations = []
+    # =============================================
+    # 1. K线形态分析 (多日趋势)
+    # =============================================
+    kline_analysis = []
 
-    if low_p > 0:
-        amplitude = (high_p - low_p) / low_p * 100
-        observations.append(f"盘中振幅 **{amplitude:.2f}%**（最高 ¥{high_p:.2f}，最低 ¥{low_p:.2f}）")
+    # 近N日高低点分析
+    n_days = min(len(kline), 10)
+    recent = kline.tail(n_days)
+    recent_high = float(recent['最高'].max())
+    recent_low = float(recent['最低'].min())
+    high_date = recent.loc[recent['最高'].idxmax()].get('日期', '')
+    low_date = recent.loc[recent['最低'].idxmin()].get('日期', '')
 
-    if open_p > 0 and close_p > 0:
-        oc_change = (close_p - open_p) / open_p * 100
-        if oc_change > 0.3:
-            observations.append(f"从开盘价上涨 **{oc_change:.2f}%**，呈现低开高走态势")
-        elif oc_change < -0.3:
-            observations.append(f"从开盘价回落 **{abs(oc_change):.2f}%**，呈现冲高回落态势")
-        else:
-            observations.append(f"收盘价与开盘价接近（变化 {oc_change:.2f}%），多空胶着")
+    day_change = (close_p - prev_close) / prev_close * 100 if prev_close > 0 else 0
 
-    if prev_close > 0:
-        day_change = (close_p - prev_close) / prev_close * 100
-        direction = "上涨" if day_change > 0 else "下跌"
-        observations.append(f"较前一交易日{direction} **{abs(day_change):.2f}%**")
+    # 从高点回落 or 从低点反弹
+    if recent_high > 0 and close_p < recent_high:
+        drop_from_high = (recent_high - close_p) / recent_high * 100
+        if drop_from_high > 3:
+            h_str = str(high_date)[:10] if high_date else ''
+            l_str = str(low_date)[:10] if low_date else ''
+            kline_analysis.append(
+                f"从{h_str}高点 **¥{recent_high:.2f}** 跌至 ¥{recent_low:.2f}，"
+                f"形成缩量调整")
 
+    # 今日走势关键判断
+    if day_change > 3:
+        kline_analysis.append(f"今日出现 **大幅反弹（+{day_change:.2f}%）**，疑似主力资金介入")
+    elif day_change > 1:
+        kline_analysis.append(f"今日温和上涨 **+{day_change:.2f}%**，走势偏强")
+    elif day_change < -3:
+        kline_analysis.append(f"今日 **大幅下挫（{day_change:.2f}%）**，需警惕破位风险")
+    elif day_change < -1:
+        kline_analysis.append(f"今日回调 **{day_change:.2f}%**，短线承压")
+    else:
+        kline_analysis.append(f"今日窄幅震荡（{day_change:+.2f}%），多空分歧不大")
+
+    # 量能分析
     if prev_volume > 0:
         vol_ratio = volume / prev_volume
-        if vol_ratio > 1.5:
-            observations.append(f"成交量放大至前日 **{vol_ratio:.1f} 倍**，资金活跃度显著提升 🔥")
-        elif vol_ratio < 0.7:
-            observations.append(f"成交量萎缩至前日 **{vol_ratio:.1f} 倍**，市场观望情绪浓厚")
+        if vol_ratio > 2.0:
+            kline_analysis.append(f"量能 **显著放大**（前日 {vol_ratio:.1f} 倍），资金加速流入 🔥")
+        elif vol_ratio > 1.3 and day_change > 0:
+            kline_analysis.append(f"**量价齐升**（量比 {vol_ratio:.1f}），上涨动力充足")
+        elif vol_ratio > 1.3 and day_change < 0:
+            kline_analysis.append(f"放量下跌（量比 {vol_ratio:.1f}），存在 **资金出逃** 迹象")
+        elif vol_ratio < 0.6:
+            kline_analysis.append("成交量 **大幅萎缩**，市场观望情绪浓厚")
         else:
-            observations.append(f"成交量与前日基本持平（比值 {vol_ratio:.2f}）")
+            kline_analysis.append("量能配合度需进一步确认")
 
-    ma5 = latest.get('MA5', None)
-    ma20 = latest.get('MA20', None)
+    # 连涨/连跌判断
+    streak = 0
+    for i in range(len(kline) - 1, max(len(kline) - 6, 0), -1):
+        c = float(kline.iloc[i].get('收盘', 0))
+        p = float(kline.iloc[i-1].get('收盘', 0)) if i > 0 else c
+        if c > p:
+            if streak >= 0:
+                streak += 1
+            else:
+                break
+        elif c < p:
+            if streak <= 0:
+                streak -= 1
+            else:
+                break
+        else:
+            break
 
-    if pd.notna(ma5) and pd.notna(ma20):
-        if close_p > float(ma5) > float(ma20):
-            observations.append("价格位于 MA5 和 MA20 **上方**，短期多头排列 📈")
-        elif close_p < float(ma5) < float(ma20):
-            observations.append("价格位于 MA5 和 MA20 **下方**，短期空头排列 📉")
-        elif float(ma5) > float(ma20) and close_p < float(ma5):
-            observations.append("MA5 仍在 MA20 上方，但价格已跌破 MA5，注意短期回调风险")
+    if streak >= 3:
+        kline_analysis.append(f"已 **连涨 {streak} 日** 📈，短线注意追高风险")
+    elif streak <= -3:
+        kline_analysis.append(f"已 **连跌 {abs(streak)} 日** 📉，超跌反弹概率增大")
 
-    # ---- 策略建议 ----
-    strategies = []
+    # K线形态判断
+    if close_p > 0 and open_p > 0:
+        body = abs(close_p - open_p)
+        upper_shadow = high_p - max(close_p, open_p)
+        lower_shadow = min(close_p, open_p) - low_p
+        if lower_shadow > body * 2 and upper_shadow < body * 0.5:
+            kline_analysis.append("出现 **长下影线**，下方有较强支撑买盘")
+        elif upper_shadow > body * 2 and lower_shadow < body * 0.5:
+            kline_analysis.append("出现 **长上影线**，上方抛压较重")
+        elif body < (high_p - low_p) * 0.1 and high_p - low_p > 0:
+            kline_analysis.append("出现 **十字星** 形态，可能为变盘信号")
+
+    # =============================================
+    # 2. 技术指标研判
+    # =============================================
+    indicators = []
     rsi = q_metrics.get('rsi', 50)
     kdj_k = q_metrics.get('kdj_k', 50)
     kdj_d = q_metrics.get('kdj_d', 50)
     bb_percent = q_metrics.get('bb_percent', 50)
     dmi_adx = q_metrics.get('dmi_adx', 25)
+    ma5 = latest.get('MA5', None)
+    ma20 = latest.get('MA20', None)
 
     if rsi > 70:
-        strategies.append("RSI 进入超买区（{:.1f}），短线获利了结压力增大，建议逢高减仓".format(rsi))
+        indicators.append(f"RSI **超买**（{rsi:.1f}），获利了结压力大")
     elif rsi < 30:
-        strategies.append("RSI 进入超卖区（{:.1f}），短线反弹概率增大，可关注右侧信号介入".format(rsi))
-    elif 40 < rsi < 60:
-        strategies.append("RSI 处于中性区间（{:.1f}），方向不明确，以观望为主".format(rsi))
+        indicators.append(f"RSI **超卖**（{rsi:.1f}），反弹概率增大")
+    elif 45 < rsi < 55:
+        indicators.append(f"RSI 中性（{rsi:.1f}），方向不明确")
+    else:
+        indicators.append(f"RSI {rsi:.1f}，{'偏强' if rsi > 55 else '偏弱'}")
 
     if kdj_k > kdj_d and kdj_k < 40:
-        strategies.append("KDJ 低位金叉形成 🟢，短期反弹动能积聚")
+        indicators.append("KDJ **低位金叉** 🟢，反弹动能积聚")
     elif kdj_k < kdj_d and kdj_k > 60:
-        strategies.append("KDJ 高位死叉 🔴，短期回调风险加大")
+        indicators.append("KDJ **高位死叉** 🔴，回调风险加大")
+    elif kdj_k > 80:
+        indicators.append("KDJ 进入超买区，警惕回落")
 
     if bb_percent > 85:
-        strategies.append("价格触及布林带上轨，短期超涨风险较高，不建议追高")
+        indicators.append("触及 **布林上轨**，超涨风险高")
     elif bb_percent < 15:
-        strategies.append("价格触及布林带下轨，超跌反弹概率增大，可考虑分批试探")
+        indicators.append("触及 **布林下轨**，超跌信号")
 
     if dmi_adx > 40:
-        strategies.append("ADX > 40，当前处于**强趋势行情**，建议顺势操作，不宜逆势")
+        indicators.append(f"ADX {dmi_adx:.0f} → **强趋势**，顺势操作")
     elif dmi_adx < 20:
-        strategies.append("ADX < 20，当前处于**震荡行情**，建议区间操作，高抛低吸")
+        indicators.append(f"ADX {dmi_adx:.0f} → **震荡行情**，区间操作")
 
-    if pd.notna(ma20) and pd.notna(ma5):
-        support = min(float(ma5), float(ma20))
-        resistance = high_p
-        strategies.append(f"关注 ¥{support:.2f} 附近支撑 | ¥{resistance:.2f} 附近压力")
+    if pd.notna(ma5) and pd.notna(ma20):
+        if close_p > float(ma5) > float(ma20):
+            indicators.append("均线 **多头排列** 📈 (价格>MA5>MA20)")
+        elif close_p < float(ma5) < float(ma20):
+            indicators.append("均线 **空头排列** 📉 (价格<MA5<MA20)")
 
-    # 转换 markdown bold 为 HTML（因为渲染在 HTML div 里）
-    import re
-    def _md_to_html(text):
-        return re.sub(r'\*\*(.+?)\*\*', r'<strong style="color:#f1f5f9">\1</strong>', text)
+    # =============================================
+    # 3. 买点评估（综合研判）
+    # =============================================
+    score = 0  # -10 ~ +10
+    buy_reasons = []
+    sell_reasons = []
 
-    obs_items = [_md_to_html(o) for o in observations] if observations else ["数据不足，暂无观察"]
-    strat_items = [_md_to_html(s) for s in strategies] if strategies else ["数据不足，暂无策略"]
+    # RSI 信号
+    if rsi < 30:
+        score += 3
+        buy_reasons.append("RSI 超卖区，反弹概率较高")
+    elif rsi > 70:
+        score -= 3
+        sell_reasons.append("RSI 超买区，注意获利了结")
 
-    obs_html = "".join([
-        f'<div style="padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.03);">• {o}</div>'
-        for o in obs_items
-    ])
-    strat_html = "".join([
-        f'<div style="padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.03);">• {s}</div>'
-        for s in strat_items
-    ])
+    # KDJ 信号
+    if kdj_k > kdj_d and kdj_k < 40:
+        score += 2
+        buy_reasons.append("KDJ 低位金叉确认")
+    elif kdj_k < kdj_d and kdj_k > 60:
+        score -= 2
+        sell_reasons.append("KDJ 高位死叉警告")
 
-    # 使用两列并排显示
-    col_obs, col_strat = st.columns(2)
-    with col_obs:
+    # 量价配合
+    if prev_volume > 0:
+        vol_ratio = volume / prev_volume
+        if vol_ratio > 1.3 and day_change > 0:
+            score += 2
+            buy_reasons.append("量价齐升，动力充足")
+        elif vol_ratio > 1.3 and day_change < -2:
+            score -= 2
+            sell_reasons.append("放量下跌，资金出逃")
+
+    # 布林位置
+    if bb_percent < 15:
+        score += 1
+        buy_reasons.append("触及布林下轨，超跌反弹概率大")
+    elif bb_percent > 85:
+        score -= 1
+        sell_reasons.append("触及布林上轨，追高风险高")
+
+    # 均线
+    if pd.notna(ma5) and pd.notna(ma20):
+        if close_p > float(ma5) > float(ma20):
+            score += 1
+        elif close_p < float(ma5) < float(ma20):
+            score -= 1
+
+    # K线形态
+    if close_p > 0 and open_p > 0:
+        lower_shadow = min(close_p, open_p) - low_p
+        body = abs(close_p - open_p)
+        if lower_shadow > body * 2:
+            score += 1
+            buy_reasons.append("长下影线，下方有支撑")
+
+    # 趋势
+    if day_change > 3:
+        score += 1
+        buy_reasons.append(f"今日放量拉升，可能形成\"尾盘抢筹\"格局")
+    elif day_change < -3:
+        score -= 1
+        sell_reasons.append("大幅下跌，短期止损观望")
+
+    # 综合评级
+    if score >= 3:
+        signal_icon = "⚡"
+        signal_text = "重点关注"
+        signal_color = "#f59e0b"
+        action_items = buy_reasons
+        action_intro = "看多信号"
+    elif score <= -3:
+        signal_icon = "⛔"
+        signal_text = "风险警示"
+        signal_color = "#ef4444"
+        action_items = sell_reasons
+        action_intro = "风险信号"
+    else:
+        signal_icon = "⏳"
+        signal_text = "观望等待"
+        signal_color = "#94a3b8"
+        action_items = buy_reasons + sell_reasons if buy_reasons or sell_reasons else ["多空力量均衡，等待方向明确"]
+        action_intro = "中性信号"
+
+    # 关键价位
+    price_levels = []
+    if pd.notna(ma5):
+        price_levels.append(f"MA5 ¥{float(ma5):.2f}")
+    if pd.notna(ma20):
+        price_levels.append(f"MA20 ¥{float(ma20):.2f}")
+
+    # 整数关口
+    if close_p > 10:
+        round_above = (int(close_p / 10) + 1) * 10
+        round_below = int(close_p / 10) * 10
+        if round_above - close_p < close_p * 0.05:
+            price_levels.append(f"关注 **¥{round_above}** 整数关口突破")
+        if close_p - round_below < close_p * 0.03:
+            price_levels.append(f"关注 **¥{round_below}** 整数支撑")
+
+    # =============================================
+    # 渲染
+    # =============================================
+    kline_html = "".join([_item(t) for t in kline_analysis])
+    indicator_html = "".join([_item(t) for t in indicators])
+    action_html = "".join([_item(t) for t in action_items])
+    price_html = "".join([_item(t) for t in price_levels]) if price_levels else ""
+
+    col1, col2 = st.columns(2)
+
+    # 左列：K线形态 + 技术指标
+    with col1:
         st.markdown(f"""
-<div style="background: linear-gradient(145deg, rgba(30,41,59,0.6), rgba(15,23,42,0.7)); 
-     border: 1px solid rgba(56,189,248,0.2); border-radius: 14px; padding: 18px; height: 100%;">
-    <div style="font-size: 0.95rem; font-weight: 600; color: #38bdf8; margin-bottom: 10px;">
-        🔍 技术观察
-    </div>
-    <div style="color: #cbd5e1; font-size: 0.82rem; line-height: 1.6;">
-        {obs_html}
-    </div>
+<div style="background: linear-gradient(145deg, rgba(30,41,59,0.6), rgba(15,23,42,0.7));
+     border: 1px solid rgba(56,189,248,0.15); border-radius: 14px; padding: 20px;">
+    <div style="font-size: 0.95rem; font-weight: 700; color: #f1f5f9; margin-bottom: 12px;
+         font-family: 'Outfit', sans-serif;">K线形态分析：</div>
+    <div style="color: #cbd5e1; font-size: 0.82rem; line-height: 1.7;">{kline_html}</div>
+
+    <div style="font-size: 0.95rem; font-weight: 700; color: #f1f5f9; margin-top: 16px; margin-bottom: 10px;
+         padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.06);
+         font-family: 'Outfit', sans-serif;">技术指标研判：</div>
+    <div style="color: #cbd5e1; font-size: 0.82rem; line-height: 1.7;">{indicator_html}</div>
 </div>
 """, unsafe_allow_html=True)
 
-    with col_strat:
+    # 右列：买点评估
+    with col2:
         st.markdown(f"""
-<div style="background: linear-gradient(145deg, rgba(30,41,59,0.6), rgba(15,23,42,0.7)); 
-     border: 1px solid rgba(239,68,68,0.2); border-left: 3px solid #ef4444; border-radius: 14px; padding: 18px; height: 100%;">
-    <div style="font-size: 0.95rem; font-weight: 600; color: #f87171; margin-bottom: 10px;">
-        📌 策略建议
+<div style="background: linear-gradient(145deg, rgba(30,41,59,0.6), rgba(15,23,42,0.7));
+     border: 1px solid rgba({('239,68,68' if score <= -3 else '245,158,11' if score >= 3 else '148,163,184')},0.25);
+     border-left: 4px solid {signal_color}; border-radius: 14px; padding: 20px;">
+
+    <div style="font-size: 0.95rem; font-weight: 700; color: #f1f5f9; margin-bottom: 6px;
+         font-family: 'Outfit', sans-serif;">
+        买点评估：
+        <span style="color: {signal_color}; margin-left: 8px; font-size: 1rem;">
+            {signal_icon} {signal_text}
+        </span>
     </div>
-    <div style="color: #cbd5e1; font-size: 0.82rem; line-height: 1.6;">
-        {strat_html}
+    <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 12px;">
+        综合得分 {score:+d} | {action_intro}
     </div>
-    <div style="color: #64748b; font-size: 0.7rem; margin-top: 10px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 6px;">
+
+    <div style="color: #cbd5e1; font-size: 0.82rem; line-height: 1.7;">{action_html}</div>
+
+    {"<div style='margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.06);'><div style=" + '"font-size: 0.85rem; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">关键价位：</div><div style="color: #cbd5e1; font-size: 0.82rem; line-height: 1.7;">' + price_html + "</div></div>" if price_html else ""}
+
+    <div style="color: #64748b; font-size: 0.68rem; margin-top: 14px; padding-top: 8px;
+         border-top: 1px solid rgba(255,255,255,0.05);">
         ⚠️ 算法自动生成，仅供参考，不构成投资建议
     </div>
 </div>
 """, unsafe_allow_html=True)
+
 
 
 def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
