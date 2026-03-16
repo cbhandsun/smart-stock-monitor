@@ -152,20 +152,34 @@ def _render_tech_observation(kline, q_metrics, stock_name, stock_code):
         resistance = high_p
         strategies.append(f"关注 ¥{support:.2f} 附近支撑 | ¥{resistance:.2f} 附近压力")
 
-    obs_text = "\n".join([f"• {o}" for o in observations]) if observations else "• 数据不足，暂无观察"
-    strat_text = "\n".join([f"• {s}" for s in strategies]) if strategies else "• 数据不足，暂无策略"
+    # 转换 markdown bold 为 HTML（因为渲染在 HTML div 里）
+    import re
+    def _md_to_html(text):
+        return re.sub(r'\*\*(.+?)\*\*', r'<strong style="color:#f1f5f9">\1</strong>', text)
 
-    # 使用两列并排显示，更紧凑
+    obs_items = [_md_to_html(o) for o in observations] if observations else ["数据不足，暂无观察"]
+    strat_items = [_md_to_html(s) for s in strategies] if strategies else ["数据不足，暂无策略"]
+
+    obs_html = "".join([
+        f'<div style="padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.03);">• {o}</div>'
+        for o in obs_items
+    ])
+    strat_html = "".join([
+        f'<div style="padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.03);">• {s}</div>'
+        for s in strat_items
+    ])
+
+    # 使用两列并排显示
     col_obs, col_strat = st.columns(2)
     with col_obs:
         st.markdown(f"""
 <div style="background: linear-gradient(145deg, rgba(30,41,59,0.6), rgba(15,23,42,0.7)); 
      border: 1px solid rgba(56,189,248,0.2); border-radius: 14px; padding: 18px; height: 100%;">
-    <div style="font-size: 0.95rem; font-weight: 600; color: #38bdf8; margin-bottom: 8px;">
+    <div style="font-size: 0.95rem; font-weight: 600; color: #38bdf8; margin-bottom: 10px;">
         🔍 技术观察
     </div>
-    <div style="color: #cbd5e1; font-size: 0.85rem; line-height: 1.7;">
-        {obs_text}
+    <div style="color: #cbd5e1; font-size: 0.82rem; line-height: 1.6;">
+        {obs_html}
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -174,13 +188,13 @@ def _render_tech_observation(kline, q_metrics, stock_name, stock_code):
         st.markdown(f"""
 <div style="background: linear-gradient(145deg, rgba(30,41,59,0.6), rgba(15,23,42,0.7)); 
      border: 1px solid rgba(239,68,68,0.2); border-left: 3px solid #ef4444; border-radius: 14px; padding: 18px; height: 100%;">
-    <div style="font-size: 0.95rem; font-weight: 600; color: #f87171; margin-bottom: 8px;">
+    <div style="font-size: 0.95rem; font-weight: 600; color: #f87171; margin-bottom: 10px;">
         📌 策略建议
     </div>
-    <div style="color: #cbd5e1; font-size: 0.85rem; line-height: 1.7;">
-        {strat_text}
+    <div style="color: #cbd5e1; font-size: 0.82rem; line-height: 1.6;">
+        {strat_html}
     </div>
-    <div style="color: #64748b; font-size: 0.7rem; margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 6px;">
+    <div style="color: #64748b; font-size: 0.7rem; margin-top: 10px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 6px;">
         ⚠️ 算法自动生成，仅供参考，不构成投资建议
     </div>
 </div>

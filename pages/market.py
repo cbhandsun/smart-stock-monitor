@@ -1,6 +1,7 @@
 """
 📡 市场信号流页面 - V7.0
-工作流: 策略选股 → 点击分析 → 决策后加入自选 → 自选跟盘
+工作流: 策略选股 → 点击直接跳转分析 → 分析后加入自选
+使用 session_state 驱动视图切换（替代 st.tabs，因为 tabs 无法程序化切换）
 """
 import streamlit as st
 import pandas as pd
@@ -14,6 +15,10 @@ from pages import load_watchlist, save_watchlist
 
 def render(L, my_stocks, name_map):
     """渲染市场页面"""
+
+    # 初始化视图状态
+    if 'market_view' not in st.session_state:
+        st.session_state['market_view'] = 'strategy'  # strategy | analyze | track
 
     # ========== 页面头部 ==========
     hdr_col, refresh_col = st.columns([8, 1])
@@ -42,16 +47,31 @@ def render(L, my_stocks, name_map):
 
     st.divider()
 
-    # ========== 三栏工作流 ==========
-    # 1️⃣ 策略选股  →  2️⃣ 决策分析  →  3️⃣ 自选跟盘
-    tab_screen, tab_analyze, tab_track = st.tabs([
-        "1️⃣ 策略选股", "2️⃣ 决策分析", "3️⃣ 自选跟盘"
-    ])
+    # ========== 视图导航条 ==========
+    current_view = st.session_state['market_view']
+    nav1, nav2, nav3 = st.columns(3)
+    with nav1:
+        if st.button("1️⃣ 策略选股", use_container_width=True,
+                    type="primary" if current_view == 'strategy' else "secondary"):
+            st.session_state['market_view'] = 'strategy'
+            st.rerun()
+    with nav2:
+        if st.button("2️⃣ 决策分析", use_container_width=True,
+                    type="primary" if current_view == 'analyze' else "secondary"):
+            st.session_state['market_view'] = 'analyze'
+            st.rerun()
+    with nav3:
+        if st.button("3️⃣ 自选跟盘", use_container_width=True,
+                    type="primary" if current_view == 'track' else "secondary"):
+            st.session_state['market_view'] = 'track'
+            st.rerun()
+
+    st.markdown("<br>", unsafe_allow_html=True)
 
     # ==========================================
-    #  Tab 1: 策略选股
+    #  视图 1: 策略选股
     # ==========================================
-    with tab_screen:
+    if current_view == 'strategy':
         if 'capture_strat' not in st.session_state:
             st.session_state['capture_strat'] = 'Value'
 
@@ -72,7 +92,6 @@ def render(L, my_stocks, name_map):
                 st.session_state['capture_strat'] = 'Growth'
                 st.rerun()
 
-        # 策略说明
         strat_desc = {
             'Value': ('💎', '价值发现', '低市盈率 + 低市净率，基本面被低估的优质标的', '#3b82f6'),
             'Momentum': ('🔥', '动量追击', '涨幅 1%~9%，量价齐升的趋势股', '#10b981'),
@@ -88,7 +107,6 @@ def render(L, my_stocks, name_map):
 </div>
 """, unsafe_allow_html=True)
 
-        # 数据表格
         with st.spinner("扫描市场中..."):
             if st.session_state['capture_strat'] == 'Value':
                 df = find_value_stocks()
@@ -98,90 +116,106 @@ def render(L, my_stocks, name_map):
                 df = find_growth_stocks()
 
         if not df.empty:
-            # 数据表格展示
-            col_cfg = {
-                "代码": st.column_config.TextColumn("代码", width="small"),
-                "名称": st.column_config.TextColumn("名称", width="medium"),
-                "最新价": st.column_config.NumberColumn("最新价", format="¥ %.2f"),
-                "涨跌幅": st.column_config.NumberColumn("涨跌幅%", format="%.2f%%"),
-            }
-            if "PE" in df.columns:
-                col_cfg["PE"] = st.column_config.ProgressColumn("PE", format="%.1f", min_value=0, max_value=50)
-                col_cfg["PB"] = st.column_config.ProgressColumn("PB", format="%.2f", min_value=0, max_value=5)
-            elif "成交额" in df.columns:
-                col_cfg["成交额"] = st.column_config.NumberColumn("成交额", format="¥ %d")
+            st.caption("👇 选择一只股票，点击右侧「分析」直接跳转深度分析")
 
-            st.dataframe(df, hide_index=True, use_container_width=True, column_config=col_cfg)
+            # 渲染每只股票为一行，带分析按钮
+            for idx, row in df.iterrows():
+                code = str(row.get('代码', ''))
+                stock_name = str(row.get('名称', ''))
+                price = row.get('最新价', 0)
+                change = row.get('涨跌幅', 0)
 
-            # 选股 → 分析 快捷操作
-            st.markdown("---")
-            stock_options = [f"{row['代码']} {row['名称']}" for _, row in df.iterrows()]
-            pick_col, btn_col = st.columns([3, 1])
-            with pick_col:
-                picked = st.selectbox("🎯 选择标的进行深度分析", stock_options, key="strategy_pick", label_visibility="visible")
-            with btn_col:
-                st.markdown("<div style='height: 28px'></div>", unsafe_allow_html=True)  # 对齐
-                if st.button("📊 深度分析", key="go_analyze", type="primary", use_container_width=True):
-                    picked_code = picked.split(" ")[0]
-                    picked_name = picked.split(" ", 1)[1] if " " in picked else ""
-                    st.session_state['selected_stock'] = picked_code
-                    st.toast(f"已选择 {picked_name} ({picked_code})，请切换到「2️⃣ 决策分析」标签查看", icon="🔬")
+                change_color = "#ef4444" if change >= 0 else "#10b981"
+                change_icon = "▲" if change >= 0 else "▼"
+
+                extra = ""
+                if 'PE' in df.columns:
+                    pe_val = row.get('PE', 0)
+                    pb_val = row.get('PB', 0)
+                    extra = f"PE {pe_val:.1f} · PB {pb_val:.2f}"
+                elif '成交额' in df.columns:
+                    amt = row.get('成交额', 0)
+                    extra = f"成交 {amt/100000000:.1f}亿" if amt > 0 else ""
+
+                row_col, btn_col = st.columns([6, 1])
+                with row_col:
+                    st.markdown(f"""
+<div style="background: rgba(30,41,59,0.25); border: 1px solid rgba(255,255,255,0.05);
+     border-radius: 10px; padding: 10px 16px; margin: 2px 0;
+     display: flex; align-items: center; justify-content: space-between;">
+    <div>
+        <span style="font-weight: 600; color: #f1f5f9; font-size: 0.95rem;">{stock_name}</span>
+        <span style="color: #64748b; font-size: 0.78rem; margin-left: 6px;">{code}</span>
+    </div>
+    <div style="text-align: right;">
+        <span style="font-weight: 600; color: #f1f5f9;">¥{price:.2f}</span>
+        <span style="color: {change_color}; margin-left: 8px; font-size:0.85rem;">{change_icon}{abs(change):.2f}%</span>
+        <span style="color: #64748b; font-size: 0.75rem; margin-left: 8px;">{extra}</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+                with btn_col:
+                    if st.button("📊 分析", key=f"analyze_{code}", use_container_width=True):
+                        st.session_state['selected_stock'] = code
+                        st.session_state['market_view'] = 'analyze'  # 直接跳转!
+                        st.rerun()
         else:
             st.info("暂无符合条件的股票")
 
     # ==========================================
-    #  Tab 2: 决策分析 (DNA Analyzer)
+    #  视图 2: 决策分析
     # ==========================================
-    with tab_analyze:
+    elif current_view == 'analyze':
         from components.dna_analyzer import render_dna_analyzer
 
-        # 显示当前分析的标的
         current = st.session_state.get('selected_stock', '601318')
         cur_name = name_map.get(current, '')
 
-        # 快捷操作栏
-        info_col, add_col = st.columns([5, 1])
+        # 标的信息 + 加入自选
+        info_col, back_col, add_col = st.columns([4, 1, 1])
         with info_col:
             in_watchlist = current in my_stocks
-            status = "⭐ 已在自选" if in_watchlist else "📋 未加入自选"
+            status = "⭐ 已在自选" if in_watchlist else ""
             st.markdown(f"""
-<div style="background: rgba(30,41,59,0.4); border-radius: 10px; padding: 10px 16px; 
+<div style="background: rgba(30,41,59,0.4); border-radius: 10px; padding: 10px 16px;
      display: flex; align-items: center; gap: 12px;">
     <span style="font-size: 1.1rem; font-weight: 600; color: #f1f5f9;">🎯 {cur_name} ({current})</span>
-    <span style="font-size: 0.8rem; color: {'#f59e0b' if in_watchlist else '#64748b'}; 
-          background: {'rgba(245,158,11,0.1)' if in_watchlist else 'rgba(100,116,139,0.1)'}; 
+    <span style="font-size: 0.8rem; color: #f59e0b; background: rgba(245,158,11,0.1);
           padding: 2px 10px; border-radius: 20px;">{status}</span>
 </div>
 """, unsafe_allow_html=True)
 
+        with back_col:
+            if st.button("◀ 返回选股", key="back_to_strategy", use_container_width=True):
+                st.session_state['market_view'] = 'strategy'
+                st.rerun()
+
         with add_col:
             if current not in my_stocks:
-                if st.button("📥 加入自选", key="add_to_watchlist_analyze", type="primary", use_container_width=True):
+                if st.button("📥 加入自选", key="add_watchlist", type="primary", use_container_width=True):
                     my_stocks.append(current)
                     save_watchlist(my_stocks)
                     st.toast(f"✅ {cur_name} 已加入自选", icon="⭐")
                     st.rerun()
             else:
-                if st.button("❌ 移出自选", key="remove_from_watchlist_analyze", use_container_width=True):
+                if st.button("❌ 移出自选", key="remove_watchlist", use_container_width=True):
                     my_stocks.remove(current)
                     save_watchlist(my_stocks)
                     st.toast(f"{cur_name} 已移出自选", icon="🗑️")
                     st.rerun()
 
-        # DNA Analyzer 组件
         render_dna_analyzer(L, my_stocks, name_map)
 
     # ==========================================
-    #  Tab 3: 自选跟盘
+    #  视图 3: 自选跟盘
     # ==========================================
-    with tab_track:
+    elif current_view == 'track':
         if not my_stocks:
             st.info("📋 还没有自选股，请先在「策略选股」中挑选标的，分析后加入自选。")
         else:
             st.markdown(f"**⭐ 我的自选** — 共 {len(my_stocks)} 只")
 
-            # 批量获取实时行情
-            from main import get_stock_names_batch
             try:
                 import requests
                 sina_codes = [f"{'s_sh' if c.startswith('6') else 's_sz'}{c}" for c in my_stocks]
@@ -203,7 +237,6 @@ def render(L, my_stocks, name_map):
             except Exception:
                 quotes = {}
 
-            # 列表渲染
             for s in my_stocks:
                 q = None
                 for key, val in quotes.items():
@@ -234,12 +267,13 @@ def render(L, my_stocks, name_map):
 """, unsafe_allow_html=True)
 
                 with col_go:
-                    if st.button("📊", key=f"track_analyze_{s}", use_container_width=True, help="切换到决策分析"):
+                    if st.button("📊", key=f"track_{s}", use_container_width=True, help="分析此标的"):
                         st.session_state['selected_stock'] = s
-                        st.toast(f"已选择 {s_name}，切换到「决策分析」标签", icon="🔬")
+                        st.session_state['market_view'] = 'analyze'
+                        st.rerun()
 
                 with col_del:
-                    if st.button("×", key=f"track_del_{s}", use_container_width=True, help="移出自选"):
+                    if st.button("×", key=f"del_{s}", use_container_width=True, help="移出自选"):
                         my_stocks.remove(s)
                         save_watchlist(my_stocks)
                         st.toast(f"{s_name} 已移出自选", icon="🗑️")
