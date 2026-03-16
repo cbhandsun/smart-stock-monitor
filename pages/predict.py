@@ -6,7 +6,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from modules.data_loader import fetch_kline
 from modules.ai.predictive_analysis import PredictiveAnalyzer
-from components.ui_components import page_header
+from components.ui_components import page_header, stock_selector, nav_to_page
 
 predictor = PredictiveAnalyzer()
 
@@ -14,7 +14,7 @@ predictor = PredictiveAnalyzer()
 def render(L):
     page_header("预测分析", icon="🔮")
 
-    symbol = st.text_input("股票代码", value=st.session_state['selected_stock'])
+    symbol = stock_selector(key_suffix="predict")
 
     if symbol:
         full_symbol = f"sh{symbol}" if symbol.startswith('6') else f"sz{symbol}"
@@ -52,6 +52,15 @@ def render(L):
                         ))
                         fig.update_layout(template="plotly_dark", height=400)
                         st.plotly_chart(fig, use_container_width=True)
+
+                        # 跨页联动
+                        st.divider()
+                        st.caption("📌 下一步")
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            nav_to_page('backtest', '用回测引擎验证策略', icon='📊', stock_code=symbol)
+                        with c2:
+                            nav_to_page('market', '前往深度分析看盘', icon='📡', stock_code=symbol)
                     else:
                         st.error(result['error'])
 
@@ -88,3 +97,4 @@ def render(L):
                         st.error(result['error'])
         else:
             st.error("无法获取股票数据")
+

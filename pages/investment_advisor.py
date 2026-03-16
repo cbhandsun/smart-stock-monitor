@@ -13,7 +13,7 @@ investment_advisor = InvestmentAdvisor()
 
 
 def render(L):
-    from components.ui_components import page_header
+    from components.ui_components import page_header, stock_selector
     page_header("AI 智能投顾", icon="🎯")
 
     tab1, tab2, tab3, tab4 = st.tabs(["用户画像", "资产配置", "风险评估", "投资建议"])
@@ -140,7 +140,7 @@ def render(L):
 
     with tab4:
         st.subheader("个性化投资建议")
-        symbol = st.text_input("关注股票", value=st.session_state['selected_stock'], key="advisor_symbol")
+        symbol = stock_selector(key_suffix="advisor")
 
         col1, col2 = st.columns(2)
 

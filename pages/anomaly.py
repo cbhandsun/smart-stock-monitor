@@ -8,13 +8,12 @@ from modules.ai.anomaly_detector import AnomalyDetector, SmartAlertSystem
 anomaly_detector = AnomalyDetector()
 smart_alert_system = SmartAlertSystem(anomaly_detector)
 
-from components.dna_analyzer import render_dna_analyzer
 
 def render(L, my_stocks, name_map):
-    from components.ui_components import page_header
+    from components.ui_components import page_header, stock_selector, nav_to_page
     page_header("异常检测监控", icon="🚨")
 
-    symbol = st.text_input("股票代码", value=st.session_state['selected_stock'], key="anomaly_symbol")
+    symbol = stock_selector(key_suffix="anomaly")
 
     if symbol:
         tab1, tab2, tab3 = st.tabs(["实时异常", "历史异常", "监控设置"])
@@ -96,5 +95,11 @@ def render(L, my_stocks, name_map):
                 anomaly_detector.thresholds['volatility_spike'] = volatility_threshold
                 st.success("设置已保存")
 
-    # Global DNA Analyzer Injection
-    render_dna_analyzer(L, my_stocks, name_map, default_target=symbol)
+    # 跨页导航替代冗余的 DNA Analyzer
+    st.divider()
+    st.caption("📌 下一步")
+    c1, c2 = st.columns(2)
+    with c1:
+        nav_to_page('market', '前往深度分析看盘', icon='📊', stock_code=symbol)
+    with c2:
+        nav_to_page('predict', '进行趋势预测', icon='🔮', stock_code=symbol)

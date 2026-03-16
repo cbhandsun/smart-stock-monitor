@@ -3,20 +3,18 @@
 """
 import streamlit as st
 from modules.research.research_center import ResearchCenter
+from components.ui_components import page_header, stock_selector, nav_to_page
 
 research_center = ResearchCenter()
 
 
-from components.dna_analyzer import render_dna_analyzer
-
 def render(L, my_stocks, name_map):
-    from components.ui_components import page_header
     page_header("研报中心", icon="📚")
 
     tab1, tab2, tab3 = st.tabs(["个股研报", "最新研报", "搜索研报"])
 
     with tab1:
-        symbol = st.text_input("股票代码", value=st.session_state['selected_stock'], key="research_symbol")
+        symbol = stock_selector(key_suffix="research")
         if symbol:
             reports = research_center.get_stock_reports(symbol, limit=20)
             if not reports.empty:
@@ -24,6 +22,15 @@ def render(L, my_stocks, name_map):
                 rating_dist = research_center.get_rating_distribution(symbol)
                 if rating_dist:
                     st.json(rating_dist)
+
+                # 跨页导航
+                st.divider()
+                st.caption("📌 下一步")
+                c1, c2 = st.columns(2)
+                with c1:
+                    nav_to_page('market', '前往深度分析看盘', icon='📊', stock_code=symbol)
+                with c2:
+                    nav_to_page('research_analyzer', '用 AI 分析研报', icon='📖', stock_code=symbol)
             else:
                 st.info("暂无研报数据")
 
@@ -42,6 +49,3 @@ def render(L, my_stocks, name_map):
                 st.dataframe(results, use_container_width=True)
             else:
                 st.info("未找到相关研报")
-
-    # Global DNA Analyzer Injection
-    render_dna_analyzer(L, my_stocks, name_map)

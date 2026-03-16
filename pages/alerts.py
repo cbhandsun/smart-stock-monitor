@@ -9,7 +9,7 @@ alert_manager = AlertManager()
 
 
 def render(L):
-    from components.ui_components import page_header
+    from components.ui_components import page_header, stock_selector
     page_header("预警系统", icon="🔔")
 
     tab1, tab2 = st.tabs(["活跃预警", "创建预警"])
@@ -32,7 +32,7 @@ def render(L):
         with st.form("create_alert"):
             col1, col2 = st.columns(2)
             with col1:
-                symbol = st.text_input("股票代码", value=st.session_state['selected_stock'])
+                symbol = stock_selector(key_suffix="alerts")
                 alert_type = st.selectbox("预警类型", [
                     ("价格高于", AlertType.PRICE_ABOVE),
                     ("价格低于", AlertType.PRICE_BELOW),

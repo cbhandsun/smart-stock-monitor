@@ -10,7 +10,7 @@ from modules.ai.sentiment_analyzer import SentimentAnalyzer
 from modules.data_loader import fetch_kline
 from utils.export import render_export_panel
 
-from components.dna_analyzer import render_dna_analyzer
+
 
 sentiment_analyzer = SentimentAnalyzer()
 
@@ -98,10 +98,10 @@ def _extract_hot_keywords_from_kline(kline: pd.DataFrame) -> list:
 
 
 def render(L, my_stocks, name_map):
-    from components.ui_components import page_header
+    from components.ui_components import page_header, stock_selector, nav_to_page
     page_header("市场情绪分析", icon="💭")
 
-    symbol = st.text_input("股票代码", value=st.session_state['selected_stock'], key="sentiment_symbol")
+    symbol = stock_selector(key_suffix="sentiment")
 
     if symbol:
         # 获取真实K线数据
@@ -187,5 +187,11 @@ def render(L, my_stocks, name_map):
                 # 导出报告
                 render_export_panel(report_text=report, symbol=symbol, key_prefix="sentiment_report")
 
-    # Global DNA Analyzer Injection
-    render_dna_analyzer(L, my_stocks, name_map, default_target=symbol)
+    # 跨页导航替代冗余的 DNA Analyzer
+    st.divider()
+    st.caption("📌 下一步")
+    c1, c2 = st.columns(2)
+    with c1:
+        nav_to_page('market', '前往深度分析看盘', icon='📊', stock_code=symbol)
+    with c2:
+        nav_to_page('predict', '进行趋势预测', icon='🔮', stock_code=symbol)

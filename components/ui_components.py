@@ -1,5 +1,5 @@
 """
-统一的 UI 组件：页面头部、全局标的指示器等
+统一的 UI 组件：页面头部、全局标的指示器、股票选择器、跨页导航
 """
 import streamlit as st
 
@@ -30,3 +30,33 @@ def stock_context_bar(name_map):
     <span style="color: #94a3b8;">{cur_name}</span>
 </div>
 """, unsafe_allow_html=True)
+
+
+def stock_selector(label="分析标的", key_suffix="default"):
+    """
+    统一的股票代码选择器。
+    修改后自动同步到 session_state['selected_stock']。
+    返回: 当前选中的股票代码字符串
+    """
+    current = st.session_state.get('selected_stock', '601318')
+    new_val = st.text_input(label, value=current, key=f"stock_sel_{key_suffix}")
+
+    # 同步回 session_state
+    if new_val and new_val != current:
+        st.session_state['selected_stock'] = new_val
+
+    return new_val
+
+
+def nav_to_page(target_page, label, icon="→", stock_code=None, button_type="secondary"):
+    """
+    跨页面导航按钮。
+    点击后跳转到目标页面，可选地设置分析标的。
+    """
+    if st.button(f"{icon} {label}", key=f"nav_{target_page}_{id(nav_to_page)}", 
+                 type=button_type, use_container_width=True):
+        if stock_code:
+            st.session_state['selected_stock'] = stock_code
+        st.session_state['current_page'] = target_page
+        st.rerun()
+
