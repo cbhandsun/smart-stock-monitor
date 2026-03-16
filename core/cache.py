@@ -1,5 +1,6 @@
 import pickle
 import json
+import os
 from typing import Optional, Any, Dict, List
 from datetime import datetime, timedelta
 
@@ -13,7 +14,10 @@ except ImportError:
 class RedisCache:
     """Redis缓存层"""
     
-    def __init__(self, host='localhost', port=6379, db=0, password=None):
+    def __init__(self, host=None, port=None, db=0, password=None):
+        host = host or os.getenv('REDIS_HOST', 'localhost')
+        port = port or int(os.getenv('REDIS_PORT', '6379'))
+        password = password or os.getenv('REDIS_PASSWORD', None)
         if not REDIS_AVAILABLE:
             self.enabled = False
             self.client = None

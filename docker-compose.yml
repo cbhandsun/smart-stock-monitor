@@ -16,8 +16,14 @@ services:
       - ./utils:/app/utils
       - ./components:/app/components
       - ./modules:/app/modules
+      - ./core:/app/core
     environment:
       - PYTHONUNBUFFERED=1
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
@@ -25,3 +31,22 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+  redis:
+    image: redis:7-alpine
+    container_name: ssm-redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6380:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  redis_data:
+    driver: local
