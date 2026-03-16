@@ -122,19 +122,31 @@ def render(L, my_stocks, name_map):
             for idx, row in df.iterrows():
                 code = str(row.get('代码', ''))
                 stock_name = str(row.get('名称', ''))
-                price = row.get('最新价', 0)
-                change = row.get('涨跌幅', 0)
+                try:
+                    price = float(row.get('最新价', 0))
+                except (ValueError, TypeError):
+                    price = 0.0
+                try:
+                    change = float(row.get('涨跌幅', 0))
+                except (ValueError, TypeError):
+                    change = 0.0
 
                 change_color = "#ef4444" if change >= 0 else "#10b981"
                 change_icon = "▲" if change >= 0 else "▼"
 
                 extra = ""
                 if 'PE' in df.columns:
-                    pe_val = row.get('PE', 0)
-                    pb_val = row.get('PB', 0)
+                    try:
+                        pe_val = float(row.get('PE', 0) or 0)
+                        pb_val = float(row.get('PB', 0) or 0)
+                    except (ValueError, TypeError):
+                        pe_val, pb_val = 0.0, 0.0
                     extra = f"PE {pe_val:.1f} · PB {pb_val:.2f}"
                 elif '成交额' in df.columns:
-                    amt = row.get('成交额', 0)
+                    try:
+                        amt = float(row.get('成交额', 0) or 0)
+                    except (ValueError, TypeError):
+                        amt = 0.0
                     extra = f"成交 {amt/100000000:.1f}亿" if amt > 0 else ""
 
                 row_col, btn_col = st.columns([6, 1])
