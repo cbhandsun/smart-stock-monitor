@@ -68,35 +68,33 @@ def get_financial_health_score(symbol):
             code = symbol[2:]
             
         # Try to fetch real data
-            df = None
-            try:
-                import akshare as ak
-                df = ak.stock_financial_analysis_indicator(symbol=code)
-            except Exception:
-                pass
-            if df is not None and not df.empty:
-                latest = df.iloc[0]
-                metrics = {
-                    'ROE': latest.get('净资产收益率(%)', 0),
-                    'NetMargin': latest.get('销售净利率(%)', 0),
-                    'AssetTurnover': latest.get('总资产周转率(次)', 0),
-                    'DebtRatio': latest.get('资产负债率(%)', 0),
-                }
-                score = 60
-                if metrics['ROE'] > 15: score += 20
-                if metrics['NetMargin'] > 15: score += 10
-                if metrics['DebtRatio'] < 50: score += 10
-                
-                result = {
-                    'score': score, 
-                    'analysis': f"基于最新财报：ROE {metrics['ROE']}%, 净利率 {metrics['NetMargin']}%.", 
-                    'metrics': metrics
-                }
-                if _redis:
-                    _redis.set(cache_key, result, expire=3600)
-                return result
-        except:
+        df = None
+        try:
+            import akshare as ak
+            df = ak.stock_financial_analysis_indicator(symbol=code)
+        except Exception:
             pass
+        if df is not None and not df.empty:
+            latest = df.iloc[0]
+            metrics = {
+                'ROE': latest.get('净资产收益率(%)', 0),
+                'NetMargin': latest.get('销售净利率(%)', 0),
+                'AssetTurnover': latest.get('总资产周转率(次)', 0),
+                'DebtRatio': latest.get('资产负债率(%)', 0),
+            }
+            score = 60
+            if metrics['ROE'] > 15: score += 20
+            if metrics['NetMargin'] > 15: score += 10
+            if metrics['DebtRatio'] < 50: score += 10
+            
+            result = {
+                'score': score, 
+                'analysis': f"基于最新财报：ROE {metrics['ROE']}%, 净利率 {metrics['NetMargin']}%.", 
+                'metrics': metrics
+            }
+            if _redis:
+                _redis.set(cache_key, result, expire=3600)
+            return result
             
         # Fallback: Try alternative data source - stock_yjbb_em (业绩快报)
         try:
