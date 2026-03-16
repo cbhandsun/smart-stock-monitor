@@ -98,7 +98,8 @@ def _extract_hot_keywords_from_kline(kline: pd.DataFrame) -> list:
 
 
 def render(L, my_stocks, name_map):
-    st.header("💭 市场情绪分析")
+    from components.ui_components import page_header
+    page_header("市场情绪分析", icon="💭")
 
     symbol = st.text_input("股票代码", value=st.session_state['selected_stock'], key="sentiment_symbol")
 

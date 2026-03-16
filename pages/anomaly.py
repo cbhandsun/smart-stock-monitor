@@ -11,7 +11,8 @@ smart_alert_system = SmartAlertSystem(anomaly_detector)
 from components.dna_analyzer import render_dna_analyzer
 
 def render(L, my_stocks, name_map):
-    st.header("🚨 异常检测监控")
+    from components.ui_components import page_header
+    page_header("异常检测监控", icon="🚨")
 
     symbol = st.text_input("股票代码", value=st.session_state['selected_stock'], key="anomaly_symbol")
 

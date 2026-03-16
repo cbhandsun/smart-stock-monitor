@@ -9,7 +9,8 @@ watchlist_manager = WatchlistManager()
 
 
 def render(L):
-    st.header("📁 组合管理")
+    from components.ui_components import page_header
+    page_header("组合管理", icon="📁")
 
     tab1, tab2 = st.tabs(["我的组合", "创建组合"])
 

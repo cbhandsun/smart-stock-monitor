@@ -265,16 +265,58 @@ with st.sidebar:
 
     st.divider()
 
-    # ---- ⭐ 我的自选 (可折叠) ----
+    # ---- ⭐ 我的自选 (可折叠, 含涨跌标签) ----
     my_stocks = load_watchlist()
     name_map = get_stock_names_batch(my_stocks)
 
-    with st.expander("⭐ 我的自选", expanded=False):
+    # 尝试批量获取实时行情 (轻量级)
+    _quotes = {}
+    if my_stocks:
+        try:
+            import requests
+            sina_codes = [f"{'s_sh' if c.startswith('6') else 's_sz'}{c}" for c in my_stocks[:10]]
+            url = f"https://hq.sinajs.cn/list={','.join(sina_codes)}"
+            headers = {'Referer': 'https://finance.sina.com.cn/'}
+            r = requests.get(url, headers=headers, timeout=3)
+            for line in r.text.strip().split(';'):
+                if '="' in line:
+                    val = line.split('="')[1].strip('"')
+                    parts = val.split(',')
+                    if len(parts) > 3:
+                        code = parts[0]  # we'll match by name
+                        _quotes[code] = {'price': float(parts[1]), 'change': float(parts[3])}
+        except Exception:
+            pass
+
+    with st.expander(f"⭐ 我的自选 ({len(my_stocks)})", expanded=False):
         for s in my_stocks[:10]:
+            # 查找行情
+            q = None
+            s_name = name_map.get(s, '')
+            for qname, qdata in _quotes.items():
+                if s_name and s_name in qname:
+                    q = qdata
+                    break
+
             c1, c2 = st.columns([5, 1])
             with c1:
-                stock_label = f"◉ {s} {name_map.get(s, '')}"
-                if st.button(stock_label, key=f"qwl_{s}", use_container_width=True, type="secondary"):
+                # 构建标签
+                if q:
+                    chg = q['change']
+                    color = "#ef4444" if chg >= 0 else "#10b981"
+                    arrow = "▲" if chg >= 0 else "▼"
+                    badge = f"<span style='color:{color}; font-size:0.7rem; font-weight:500;'>{arrow}{abs(chg):.1f}%</span>"
+                else:
+                    badge = ""
+
+                st.markdown(
+                    f"<div style='padding:2px 0; font-size:0.85rem;'>"
+                    f"<span style='color:#cbd5e1;'>{s}</span> "
+                    f"<span style='color:#94a3b8; font-size:0.75rem;'>{s_name}</span> "
+                    f"{badge}</div>",
+                    unsafe_allow_html=True
+                )
+                if st.button(f"查看", key=f"qwl_{s}", use_container_width=True, type="secondary"):
                     st.session_state['selected_stock'] = s
                     st.rerun()
             with c2:
@@ -317,6 +359,10 @@ with st.sidebar:
 
     st.divider()
 
+# ---- 全局标的指示器 ----
+from components.ui_components import stock_context_bar
+stock_context_bar(name_map)
+
 # ---- 页面路由 ----
 current_page = st.session_state['current_page']
 
@@ -350,4 +396,4 @@ else:
     st.error(f"未知页面: {current_page}")
 
 st.divider()
-st.caption("SSM Quantum Pro v7.0 | Smart Stock Monitor | AI 量化投研工作站")
+st.caption("SSM Quantum Pro v7.0 | AI 量化投研工作站")

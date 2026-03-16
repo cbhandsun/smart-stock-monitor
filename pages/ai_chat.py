@@ -8,7 +8,8 @@ qa_system = IntelligentQA()
 
 
 def render(L):
-    st.header("🤖 AI智能问答")
+    from components.ui_components import page_header
+    page_header("AI 智能问答", subtitle="自然语言转量化因子", icon="🤖")
 
     if 'chat_history' not in st.session_state:
         st.session_state['chat_history'] = []

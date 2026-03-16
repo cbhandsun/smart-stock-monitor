@@ -14,12 +14,13 @@ except ImportError:
 
 
 def render(L):
-    st.header("📊 回测引擎")
+    from components.ui_components import page_header
+    page_header("回测引擎", icon="📊")
 
     with st.form("backtest_config"):
         col1, col2, col3 = st.columns(3)
         with col1:
-            symbol = st.text_input("股票代码", value="601318")
+            symbol = st.text_input("股票代码", value=st.session_state.get('selected_stock', '601318'))
             strategy = st.selectbox("策略", ["均线交叉", "RSI策略"])
         with col2:
             start_date = st.date_input("开始日期", dt.date(2024, 1, 1))

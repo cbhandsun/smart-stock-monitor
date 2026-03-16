@@ -9,7 +9,8 @@ alert_manager = AlertManager()
 
 
 def render(L):
-    st.header("🔔 预警系统")
+    from components.ui_components import page_header
+    page_header("预警系统", icon="🔔")
 
     tab1, tab2 = st.tabs(["活跃预警", "创建预警"])
 

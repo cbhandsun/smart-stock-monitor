@@ -6,12 +6,13 @@ import pandas as pd
 import plotly.graph_objects as go
 from modules.data_loader import fetch_kline
 from modules.ai.predictive_analysis import PredictiveAnalyzer
+from components.ui_components import page_header
 
 predictor = PredictiveAnalyzer()
 
 
 def render(L):
-    st.header("🔮 预测分析")
+    page_header("预测分析", icon="🔮")
 
     symbol = st.text_input("股票代码", value=st.session_state['selected_stock'])
 
@@ -23,7 +24,9 @@ def render(L):
             tab1, tab2, tab3 = st.tabs(["趋势预测", "风险评估", "支撑阻力"])
 
             with tab1:
-                method = st.selectbox("预测方法", ["linear", "poly", "rf"])
+                method_map = {"线性回归": "linear", "多项式": "poly", "随机森林": "rf"}
+                method_label = st.selectbox("预测方法", list(method_map.keys()))
+                method = method_map[method_label]
                 days = st.slider("预测天数", 1, 30, 5)
 
                 if st.button("开始预测", type="primary"):

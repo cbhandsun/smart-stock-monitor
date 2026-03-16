@@ -101,22 +101,49 @@ def render_tv_chart(df: pd.DataFrame, height=500, theme="dark", indicators=None)
     <html>
     <head>
         <meta charset="utf-8">
-        <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
         <style>
             body {{ margin: 0; padding: 0; background-color: {bg_color}; overflow: hidden; color: {text_color}; font-family: sans-serif; }}
             #tv_chart {{ width: 100%; height: {height}px; }}
             #error_log {{ color: #ef4444; padding: 10px; word-wrap: break-word; font-size: 14px; }}
+            #loading {{ display: flex; align-items: center; justify-content: center; height: {height}px; color: #94a3b8; font-size: 14px; }}
+            @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
+            .spinner {{ width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.1); border-top-color: #38bdf8; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 10px; }}
         </style>
     </head>
     <body>
+        <div id="loading"><div class="spinner"></div>加载图表引擎中...</div>
         <div id="tv_chart"></div>
         <div id="error_log"></div>
         <script>
-            window.onerror = function(msg, url, lineNo, columnNo, error) {{
-                document.getElementById('error_log').innerHTML += '<p>Error: ' + msg + ' at line ' + lineNo + '</p>';
-                return false;
-            }};
-            try {{
+            // 双 CDN 容灾加载
+            function loadScript(url) {{
+                return new Promise(function(resolve, reject) {{
+                    var s = document.createElement('script');
+                    s.src = url;
+                    s.onload = resolve;
+                    s.onerror = reject;
+                    document.head.appendChild(s);
+                }});
+            }}
+
+            var cdnUrls = [
+                'https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js',
+                'https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js'
+            ];
+
+            function tryLoad(idx) {{
+                if (idx >= cdnUrls.length) {{
+                    document.getElementById('loading').innerHTML = '⚠️ 图表引擎加载失败，请检查网络连接';
+                    return;
+                }}
+                loadScript(cdnUrls[idx]).then(initChart).catch(function() {{
+                    tryLoad(idx + 1);
+                }});
+            }}
+
+            function initChart() {{
+                document.getElementById('loading').style.display = 'none';
+                try {{
                 const chartOptions = {{
                     layout: {{
                         textColor: '{text_color}',
@@ -203,6 +230,10 @@ def render_tv_chart(df: pd.DataFrame, height=500, theme="dark", indicators=None)
             }} catch (err) {{
                 document.getElementById('error_log').innerHTML += '<p>Catch: ' + err.message + '</p>';
             }}
+            }}
+
+            // 启动加载
+            tryLoad(0);
         </script>
     </body>
     </html>

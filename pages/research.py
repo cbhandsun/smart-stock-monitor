@@ -10,7 +10,8 @@ research_center = ResearchCenter()
 from components.dna_analyzer import render_dna_analyzer
 
 def render(L, my_stocks, name_map):
-    st.header("📚 研报中心")
+    from components.ui_components import page_header
+    page_header("研报中心", icon="📚")
 
     tab1, tab2, tab3 = st.tabs(["个股研报", "最新研报", "搜索研报"])
 

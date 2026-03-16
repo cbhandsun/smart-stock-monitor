@@ -12,7 +12,8 @@ except ImportError:
 
 
 def render(L, new_modules_available):
-    st.header("⚙️ 设置")
+    from components.ui_components import page_header
+    page_header("设置", icon="⚙️")
 
     col1, col2 = st.columns(2)
 

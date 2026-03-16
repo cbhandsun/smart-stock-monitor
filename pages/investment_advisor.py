@@ -13,7 +13,8 @@ investment_advisor = InvestmentAdvisor()
 
 
 def render(L):
-    st.header("🎯 AI智能投顾")
+    from components.ui_components import page_header
+    page_header("AI 智能投顾", icon="🎯")
 
     tab1, tab2, tab3, tab4 = st.tabs(["用户画像", "资产配置", "风险评估", "投资建议"])
 

@@ -57,7 +57,8 @@ def _df_to_compare_reports(reports_df: pd.DataFrame, symbol: str, name: str) -> 
 
 
 def render(L, name_map):
-    st.header("📖 智能研报分析")
+    from components.ui_components import page_header
+    page_header("智能研报分析", icon="📖")
 
     symbol = st.text_input("股票代码", value=st.session_state['selected_stock'], key="research_analyzer_symbol")
     stock_name = name_map.get(symbol, symbol)

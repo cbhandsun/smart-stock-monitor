@@ -1,6 +1,10 @@
 import pandas as pd
 import numpy as np
-import vectorbt as vbt
+try:
+    import vectorbt as vbt
+    VBT_AVAILABLE = True
+except ImportError:
+    VBT_AVAILABLE = False
 from typing import Dict, List, Callable, Optional
 
 class BacktestEngine:
