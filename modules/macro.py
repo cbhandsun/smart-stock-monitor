@@ -1,5 +1,4 @@
 import requests
-import akshare as ak
 import pandas as pd
 
 def get_macro_indicators():

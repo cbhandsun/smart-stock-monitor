@@ -15,11 +15,11 @@ from components.ui_components import stock_selector
 
 
 def _progress_nav(current_view):
-    """渲染步骤进度导航条"""
+    """渲染步骤进度导航条 — 纯 CSS 视觉 + Streamlit 按钮"""
     steps = [
-        ('strategy', '① 选股', '📋'),
-        ('analyze', '② 分析', '📊'),
-        ('track', '③ 跟盘', '⭐'),
+        ('strategy', '选股', '📋'),
+        ('analyze', '分析', '📊'),
+        ('track', '跟盘', '⭐'),
     ]
     items_html = ""
     for i, (key, label, icon) in enumerate(steps):
@@ -39,42 +39,37 @@ def _progress_nav(current_view):
             label_style = "color: #64748b;"
 
         items_html += f'''
-        <div style="display: flex; flex-direction: column; align-items: center; z-index: 1; cursor: pointer;"
-             onclick="document.querySelector('[data-testid=stButton] button[kind=secondary]').click()">
-            <div style="width: 32px; height: 32px; border-radius: 50%; {dot_style}
-                 display: flex; align-items: center; justify-content: center; font-size: 0.85rem;">
+        <div style="display: flex; flex-direction: column; align-items: center; z-index: 1;">
+            <div style="width: 28px; height: 28px; border-radius: 50%; {dot_style}
+                 display: flex; align-items: center; justify-content: center; font-size: 0.8rem;">
                 {icon}
             </div>
-            <span style="font-size: 0.78rem; margin-top: 4px; {label_style}">{label}</span>
+            <span style="font-size: 0.75rem; margin-top: 3px; {label_style}">{label}</span>
         </div>
         '''
         if i < len(steps) - 1:
             line_color = "#10b981" if is_done else "#334155"
-            items_html += f'<div style="flex: 1; height: 2px; background: {line_color}; margin: 16px 0 0; min-width: 40px;"></div>'
+            items_html += f'<div style="flex: 1; height: 2px; background: {line_color}; margin: 14px 0 0; min-width: 60px;"></div>'
 
-    st.markdown(f'''
-<div style="display: flex; align-items: flex-start; justify-content: center;
-     padding: 10px 30px; margin: 4px 0 12px;">
-    {items_html}
-</div>
-''', unsafe_allow_html=True)
+    st.markdown(f'''<div style="display: flex; align-items: flex-start; justify-content: center;
+     padding: 6px 40px; margin: 0 0 4px;">{items_html}</div>''', unsafe_allow_html=True)
 
-    # 真实的导航按钮（隐藏不了，用 columns）
+    # Streamlit 导航按钮
     c1, c2, c3 = st.columns(3)
     with c1:
-        if st.button("选股", use_container_width=True,
+        if st.button("① 选股", use_container_width=True,
                      type="primary" if current_view == 'strategy' else "secondary",
                      key="nav_strategy"):
             st.session_state['market_view'] = 'strategy'
             st.rerun()
     with c2:
-        if st.button("分析", use_container_width=True,
+        if st.button("② 分析", use_container_width=True,
                      type="primary" if current_view == 'analyze' else "secondary",
                      key="nav_analyze"):
             st.session_state['market_view'] = 'analyze'
             st.rerun()
     with c3:
-        if st.button("跟盘", use_container_width=True,
+        if st.button("③ 跟盘", use_container_width=True,
                      type="primary" if current_view == 'track' else "secondary",
                      key="nav_track"):
             st.session_state['market_view'] = 'track'
@@ -92,7 +87,7 @@ def render(L, my_stocks, name_map):
     with title_col:
         st.markdown(f"## 📡 {L.get('market_discovery', '实时信号流')}")
     with search_col:
-        code = stock_selector(label="快速跳转分析", key="market_search")
+        code = stock_selector(label="快速跳转分析", key_suffix="market_search")
         if code and code != st.session_state.get('_last_market_search', ''):
             st.session_state['_last_market_search'] = code
             st.session_state['selected_stock'] = code
@@ -363,6 +358,18 @@ def _render_analyze_view(L, my_stocks, name_map):
 
 def _render_track_view(L, my_stocks, name_map):
     """自选跟盘视图 — Redis 缓存 + 排序"""
+    # 去重
+    seen = set()
+    deduped = []
+    for s in my_stocks:
+        if s not in seen:
+            seen.add(s)
+            deduped.append(s)
+    if len(deduped) != len(my_stocks):
+        my_stocks.clear()
+        my_stocks.extend(deduped)
+        save_watchlist(my_stocks)
+
     if not my_stocks:
         st.markdown('''
 <div style="text-align:center; padding:60px 20px; color:#64748b;">
@@ -444,7 +451,7 @@ def _render_track_view(L, my_stocks, name_map):
         stock_data.sort(key=lambda x: x['change'])
 
     # 渲染 — 紧凑列表
-    for item in stock_data:
+    for i, item in enumerate(stock_data):
         s = item['code']
         s_name = item['name']
         s_price = item['price']
@@ -469,13 +476,13 @@ def _render_track_view(L, my_stocks, name_map):
 </div>''', unsafe_allow_html=True)
 
         with col_go:
-            if st.button("📊", key=f"track_{s}", use_container_width=True, help="分析此标的"):
+            if st.button("📊", key=f"track_{i}_{s}", use_container_width=True, help="分析此标的"):
                 st.session_state['selected_stock'] = s
                 st.session_state['market_view'] = 'analyze'
                 st.rerun()
 
         with col_del:
-            if st.button("🗑️", key=f"del_{s}", use_container_width=True, help="移出自选"):
+            if st.button("🗑️", key=f"del_{i}_{s}", use_container_width=True, help="移出自选"):
                 my_stocks.remove(s)
                 save_watchlist(my_stocks)
                 st.toast(f"{s_name} 已移出自选", icon="🗑️")

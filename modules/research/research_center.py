@@ -1,8 +1,12 @@
-import akshare as ak
 import pandas as pd
 from typing import List, Dict, Optional
 from dataclasses import dataclass
 from datetime import datetime
+
+def _get_ak():
+    """Lazy import akshare"""
+    import akshare as ak
+    return ak
 
 @dataclass
 class ResearchReport:
@@ -27,7 +31,7 @@ class ResearchCenter:
         """获取个股研报"""
         try:
             code = symbol[2:] if symbol.startswith(('sh', 'sz')) else symbol
-            df = ak.stock_zyjs_report_em(symbol=code)
+            df = _get_ak().stock_zyjs_report_em(symbol=code)
             return df.head(limit)
         except Exception as e:
             print(f"个股研报获取失败: {e}")
@@ -36,7 +40,7 @@ class ResearchCenter:
     def get_industry_reports(self, industry: str, limit: int = 10) -> pd.DataFrame:
         """获取行业研报"""
         try:
-            df = ak.stock_research_report_em(symbol=industry)
+            df = _get_ak().stock_research_report_em(symbol=industry)
             return df.head(limit)
         except Exception as e:
             print(f"行业研报获取失败: {e}")
@@ -45,7 +49,7 @@ class ResearchCenter:
     def get_latest_reports(self, limit: int = 20) -> pd.DataFrame:
         """获取最新研报"""
         try:
-            df = ak.stock_research_report_em()
+            df = _get_ak().stock_research_report_em()
             return df.head(limit)
         except Exception as e:
             print(f"最新研报获取失败: {e}")
@@ -54,7 +58,7 @@ class ResearchCenter:
     def get_analyst_reports(self, analyst: str, limit: int = 10) -> pd.DataFrame:
         """获取分析师研报"""
         try:
-            df = ak.stock_research_report_em()
+            df = _get_ak().stock_research_report_em()
             if '分析师' in df.columns:
                 df = df[df['分析师'].str.contains(analyst, na=False)]
             return df.head(limit)
@@ -65,7 +69,7 @@ class ResearchCenter:
     def get_institution_reports(self, institution: str, limit: int = 10) -> pd.DataFrame:
         """获取机构研报"""
         try:
-            df = ak.stock_research_report_em()
+            df = _get_ak().stock_research_report_em()
             if '机构' in df.columns:
                 df = df[df['机构'].str.contains(institution, na=False)]
             return df.head(limit)
@@ -141,7 +145,7 @@ class ResearchCenter:
     def search_reports(self, keyword: str, limit: int = 20) -> pd.DataFrame:
         """搜索研报"""
         try:
-            df = ak.stock_research_report_em()
+            df = _get_ak().stock_research_report_em()
             
             mask = pd.Series([False] * len(df))
             for col in df.columns:

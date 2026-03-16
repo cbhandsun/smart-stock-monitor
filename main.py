@@ -1,7 +1,6 @@
 import os
 import logging
 import glob
-import akshare as ak
 import pandas as pd
 import streamlit as st
 import requests
@@ -143,6 +142,7 @@ def get_full_market_data():
     df = pd.DataFrame()
     # 尝试 EM 源 (AkShare)
     try:
+        import akshare as ak
         df = ak.stock_zh_a_spot_em()
     except Exception as e:
         logger.warning(f"AkShare 全市场快照获取失败: {e}")
@@ -252,8 +252,9 @@ def get_stock_names_batch(codes):
         _redis.set(cache_key, name_map, expire=120)
     return name_map
 
-def get_stock_research_reports(symbol):
+def get_stock_reports(symbol):
     try:
+        import akshare as ak
         return ak.stock_zyjs_report_em(symbol=symbol).head(3)
     except Exception as e:
         logger.warning(f"获取研报失败 {symbol}: {e}")
@@ -261,6 +262,7 @@ def get_stock_research_reports(symbol):
 
 def get_profit_forecast(symbol):
     try:
+        import akshare as ak
         return ak.stock_profit_forecast_em(symbol=symbol).head(1)
     except Exception as e:
         logger.warning(f"获取盈利预测失败 {symbol}: {e}")
@@ -272,8 +274,9 @@ def get_trading_signals(symbol):
 def get_stock_kline_data(symbol):
     return fetch_kline(symbol)
 
-def get_hot_trend_stocks():
+def get_sector_flow(symbol):
     try:
+        import akshare as ak
         sector_flow = ak.stock_sector_fund_flow_rank(indicator="今日")
         if sector_flow.empty: return "数据暂缺", pd.DataFrame()
         top_sector = sector_flow.sort_values(by='主力净流入-净额', ascending=False).iloc[0]

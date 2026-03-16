@@ -1,5 +1,4 @@
 import requests
-import akshare as ak
 import pandas as pd
 
 # Redis L1 缓存
@@ -69,9 +68,13 @@ def get_financial_health_score(symbol):
             code = symbol[2:]
             
         # Try to fetch real data
-        try:
-            df = ak.stock_financial_analysis_indicator(symbol=code)
-            if not df.empty:
+            df = None
+            try:
+                import akshare as ak
+                df = ak.stock_financial_analysis_indicator(symbol=code)
+            except Exception:
+                pass
+            if df is not None and not df.empty:
                 latest = df.iloc[0]
                 metrics = {
                     'ROE': latest.get('净资产收益率(%)', 0),
@@ -97,6 +100,7 @@ def get_financial_health_score(symbol):
             
         # Fallback: Try alternative data source - stock_yjbb_em (业绩快报)
         try:
+            import akshare as ak
             df_yjbb = ak.stock_yjbb_em(date="20241231")  # 最新业绩快报
             stock_row = df_yjbb[df_yjbb['股票代码'] == code]
             if not stock_row.empty:

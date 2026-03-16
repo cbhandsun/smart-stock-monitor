@@ -1,4 +1,4 @@
-import akshare as ak
+
 import pandas as pd
 import requests
 import os
@@ -138,8 +138,10 @@ def fetch_kline_weekly_monthly(symbol, period='weekly', datalen=100):
         code = symbol[2:] if symbol.startswith(('sh', 'sz')) else symbol
         
         if period == 'weekly':
+            import akshare as ak
             df = ak.stock_zh_a_hist(symbol=code, period="weekly", start_date="20200101", adjust="qfq")
         else:  # monthly
+            import akshare as ak
             df = ak.stock_zh_a_hist(symbol=code, period="monthly", start_date="20200101", adjust="qfq")
         
         if df.empty:
@@ -210,6 +212,7 @@ def fetch_research_reports(symbol):
     try:
         # 提取纯数字代码
         code = symbol[2:] if symbol.startswith(('sh', 'sz')) else symbol
+        import akshare as ak
         df = ak.stock_zyjs_report_em(symbol=code)
         if not df.empty:
             return df.head(3)
