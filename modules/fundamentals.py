@@ -73,11 +73,44 @@ def get_financial_health_score(symbol):
         except:
             pass
             
-        # Fallback / Mock for demo if API blocked
+        # Fallback: Try alternative data source - stock_yjbb_em (业绩快报)
+        try:
+            df_yjbb = ak.stock_yjbb_em(date="20241231")  # 最新业绩快报
+            stock_row = df_yjbb[df_yjbb['股票代码'] == code]
+            if not stock_row.empty:
+                row = stock_row.iloc[0]
+                metrics = {
+                    'ROE': row.get('净资产收益率', 0),
+                    'NetMargin': row.get('销售净利率', 0),
+                    'RevenueGrowth': row.get('营业收入同比增长率', 0),
+                    'ProfitGrowth': row.get('净利润同比增长率', 0),
+                }
+                
+                # 计算健康分
+                score = 50
+                if metrics['ROE'] > 10: score += 15
+                elif metrics['ROE'] > 5: score += 10
+                if metrics['NetMargin'] > 10: score += 10
+                elif metrics['NetMargin'] > 5: score += 5
+                if metrics['RevenueGrowth'] > 0: score += 10
+                if metrics['ProfitGrowth'] > 0: score += 10
+                score = min(100, max(0, score))
+                
+                return {
+                    'score': int(score),
+                    'analysis': f"基于业绩快报：ROE {metrics['ROE']:.1f}%, 营收增长 {metrics['RevenueGrowth']:.1f}%", 
+                    'metrics': metrics,
+                    'source': '业绩快报'
+                }
+        except Exception as e2:
+            print(f"Alternative data fetch error: {e2}")
+        
+        # Final fallback with warning
         return {
-            'score': 75,
-            'analysis': "暂无实时财报数据 (API连接受限)，显示预估值。",
-            'metrics': {'ROE': 12.5, 'NetMargin': 15.2, 'DebtRatio': 45.0}
+            'score': 50,
+            'analysis': "⚠️ 财务数据获取失败，请检查网络连接或稍后重试",
+            'metrics': {},
+            'source': 'unavailable'
         }
         
     except Exception as e:

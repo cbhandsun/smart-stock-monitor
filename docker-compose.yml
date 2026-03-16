@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  stock-monitor:
+    build: .
+    container_name: smart-stock-monitor
+    ports:
+      - "8502:8501"
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env
+      - ./.streamlit:/app/.streamlit
+      - ./app.py:/app/app.py
+      - ./main.py:/app/main.py
+      - ./pages:/app/pages
+      - ./utils:/app/utils
+      - ./components:/app/components
+      - ./modules:/app/modules
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

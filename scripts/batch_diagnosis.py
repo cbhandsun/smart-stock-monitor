@@ -1,10 +1,14 @@
 import json
 import os
+import sys
 import datetime
+
+# 添加项目根目录到路径
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from modules.data_loader import fetch_trading_signals, fetch_research_reports
 from modules.fundamentals import get_financial_health_score
 from modules.quant import calculate_metrics
-from ai_module import call_ai_for_stock_diagnosis # Need to ensure this is importable
+from core.ai_client import call_ai_for_stock_diagnosis
 
 WATCHLIST = "/home/node/.openclaw/workspace-dev/smart-stock-monitor/watchlist.json"
 REPORT_DIR = "/home/node/.openclaw/workspace-dev/smart-stock-monitor/reports"

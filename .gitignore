@@ -1,8 +1,13 @@
 __pycache__/
 .env
 venv/
-reports/
 *.log
 *.pyc
 .ipynb_checkpoints/
 .streamlit/
+
+# Runtime data
+data/cache/
+data/reports/
+data/alerts/
+data/portfolios/
