@@ -8,6 +8,15 @@ import concurrent.futures
 CACHE_DIR = "data/cache"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
+# Redis L1 缓存
+try:
+    from core.cache import RedisCache
+    _redis = RedisCache()
+    if not _redis.ping():
+        _redis = None
+except Exception:
+    _redis = None
+
 def _get_cache_path(symbol, period):
     return os.path.join(CACHE_DIR, f"kline_{symbol}_{period}.pkl")
 
@@ -49,13 +58,8 @@ TIME_PERIOD_MAP = {
 
 def fetch_kline(symbol, period='daily', datalen=100):
     """
-    使用新浪接口获取K线数据 (解决 akshare 在海外服务器被封锁的问题)
+    获取K线数据 — Redis L1 (300s) + 文件 L2
     symbol 格式: sh601318, sz002428
-    
-    Args:
-        symbol: 股票代码
-        period: 时间周期 - 1min, 5min, 15min, 30min, 60min, daily, weekly, monthly
-        datalen: 获取的数据条数
     """
     # 确保带上前缀
     if not symbol.startswith(('sh', 'sz')):
@@ -67,10 +71,20 @@ def fetch_kline(symbol, period='daily', datalen=100):
     if period in ['weekly', 'monthly']:
         return fetch_kline_weekly_monthly(symbol, period, datalen)
     
-    # 尝试读取缓存
+    # L1: Redis
+    redis_key = f"kline:{symbol}:{period}:{datalen}"
+    if _redis:
+        cached = _redis.get(redis_key)
+        if cached is not None:
+            return cached.tail(datalen) if len(cached) > datalen else cached
+
+    # L2: 文件缓存
     cached_df = _load_from_cache(symbol, period)
     if cached_df is not None:
-        return cached_df.tail(datalen) if len(cached_df) > datalen else cached_df
+        result = cached_df.tail(datalen) if len(cached_df) > datalen else cached_df
+        if _redis:
+            _redis.set(redis_key, result, expire=300)
+        return result
     
     url = f"http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol={symbol}&scale={scale}&ma=no&datalen={datalen}"
     headers = {'Referer': 'https://finance.sina.com.cn/'}
@@ -81,7 +95,6 @@ def fetch_kline(symbol, period='daily', datalen=100):
             return pd.DataFrame()
         
         df = pd.DataFrame(data)
-        # 统一列名以适配原有逻辑
         df.rename(columns={
             'day': '日期', 
             'open': '开盘', 
@@ -91,20 +104,20 @@ def fetch_kline(symbol, period='daily', datalen=100):
             'volume': '成交量'
         }, inplace=True)
         
-        # 转换数值类型
         for col in ['开盘', '最高', '最低', '收盘', '成交量']:
             df[col] = pd.to_numeric(df[col])
         
-        # 计算均线
         df['MA5'] = df['收盘'].rolling(window=5).mean()
         df['MA20'] = df['收盘'].rolling(window=20).mean()
         df['MA60'] = df['收盘'].rolling(window=60).mean()
-        
-        # 添加周期标识
         df['周期'] = period
         
+        # 写入双层缓存
         _save_to_cache(df, symbol, period)
-        return df.tail(datalen) if len(df) > datalen else df
+        result = df.tail(datalen) if len(df) > datalen else df
+        if _redis:
+            _redis.set(redis_key, result, expire=300)
+        return result
     except Exception as e:
         print(f"Sina KLine fetch error for {symbol}: {e}")
         return pd.DataFrame()

@@ -2,18 +2,28 @@ import requests
 import akshare as ak
 import pandas as pd
 
+# Redis L1 缓存
+try:
+    from core.cache import RedisCache
+    _redis = RedisCache()
+    if not _redis.ping():
+        _redis = None
+except Exception:
+    _redis = None
+
 def get_macro_indicators():
     """
-    获取 A股核心宏观与流动性指标：
-    1. 北向资金 (模拟/或通过 akshare 获取)
-    2. 富时中国A50期货 (Sentiment)
-    3. 美元/离岸人民币 (USD/CNH) - 资金流向风向标
+    获取 A股核心宏观与流动性指标 — Redis 缓存 120s
     """
+    # L1: Redis
+    if _redis:
+        cached = _redis.get("macro:indicators")
+        if cached is not None:
+            return cached
+
     indicators = {}
     
-    # --- 1. Sina JS 实时行情 ---
     try:
-        # fx_susdcnh (离岸人民币), hf_CHA50CFD (A50期货)
         url = "https://hq.sinajs.cn/list=fx_susdcnh,hf_CHA50CFD"
         headers = {'Referer': 'https://finance.sina.com.cn/'}
         r = requests.get(url, headers=headers, timeout=3)
@@ -37,13 +47,22 @@ def get_macro_indicators():
     except Exception as e:
         print(f"Macro fetch error (Sina): {e}")
 
+    if indicators and _redis:
+        _redis.set("macro:indicators", indicators, expire=120)
+
     return indicators
 
 def get_financial_health_score(symbol):
     """
-    获取个股财务健康度 (杜邦分析 + 估值)
-    Fallback to mocked/estimated data if API fails to avoid empty UI.
+    获取个股财务健康度 — Redis 缓存 3600s (财务数据变化慢)
     """
+    # L1: Redis (1小时 TTL，财务数据更新频率低)
+    cache_key = f"fundamentals:{symbol}"
+    if _redis:
+        cached = _redis.get(cache_key)
+        if cached is not None:
+            return cached
+
     try:
         code = symbol
         if symbol.startswith(('sh', 'sz')):
@@ -65,11 +84,14 @@ def get_financial_health_score(symbol):
                 if metrics['NetMargin'] > 15: score += 10
                 if metrics['DebtRatio'] < 50: score += 10
                 
-                return {
+                result = {
                     'score': score, 
                     'analysis': f"基于最新财报：ROE {metrics['ROE']}%, 净利率 {metrics['NetMargin']}%.", 
                     'metrics': metrics
                 }
+                if _redis:
+                    _redis.set(cache_key, result, expire=3600)
+                return result
         except:
             pass
             
@@ -96,12 +118,15 @@ def get_financial_health_score(symbol):
                 if metrics['ProfitGrowth'] > 0: score += 10
                 score = min(100, max(0, score))
                 
-                return {
+                result = {
                     'score': int(score),
                     'analysis': f"基于业绩快报：ROE {metrics['ROE']:.1f}%, 营收增长 {metrics['RevenueGrowth']:.1f}%", 
                     'metrics': metrics,
                     'source': '业绩快报'
                 }
+                if _redis:
+                    _redis.set(cache_key, result, expire=3600)
+                return result
         except Exception as e2:
             print(f"Alternative data fetch error: {e2}")
         

@@ -13,6 +13,18 @@ from modules.data_loader import fetch_trading_signals, fetch_kline
 
 logger = logging.getLogger(__name__)
 
+# Redis L1 缓存 (快速内存缓存)
+try:
+    from core.cache import RedisCache
+    _redis = RedisCache()
+    if not _redis.ping():
+        _redis = None
+        logger.info("Redis 未连接，使用文件缓存")
+    else:
+        logger.info("Redis L1 缓存已启用")
+except Exception:
+    _redis = None
+
 CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 
@@ -57,9 +69,15 @@ def save_to_cache(key, df):
     except Exception as e:
         logger.warning(f"缓存写入失败 {path}: {e}")
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def get_market_overview():
-    """获取市场指数概览 (新浪源)"""
+    """获取市场指数概览 (新浪源) — Redis TTL 60s"""
+    # L1: Redis
+    if _redis:
+        cached = _redis.get_market_overview()
+        if cached is not None:
+            return cached
+
     try:
         url = "https://hq.sinajs.cn/list=s_sh000001,s_sz399001,s_sz399006"
         headers = {'Referer': 'https://finance.sina.com.cn/'}
@@ -74,7 +92,11 @@ def get_market_overview():
                 if len(parts) > 3:
                     data.append({'名称': parts[0], '最新价': float(parts[1]), '涨跌幅': float(parts[3])})
         df = pd.DataFrame(data)
-        if not df.empty: return df
+        if not df.empty:
+            # 写入 Redis L1 (60 秒 TTL)
+            if _redis:
+                _redis.set_market_overview(df, expire=60)
+            return df
     except Exception as e:
         logger.warning(f"获取市场概览失败: {e}")
     return pd.DataFrame(columns=['名称', '最新价', '涨跌幅'])
@@ -102,10 +124,20 @@ def fetch_sina_market_snapshot(page=1):
     return pd.DataFrame()
 
 def get_full_market_data():
-    """抓取全市场快照 (优先从当日缓存读取)"""
+    """抓取全市场快照 — Redis L1 (300s) + 文件 L2"""
     cache_key = "full_market_snapshot"
+
+    # L1: Redis (300 秒)
+    if _redis:
+        cached = _redis.get(f"market:{cache_key}")
+        if cached is not None:
+            return cached
+
+    # L2: 文件缓存 (当日)
     cached_df = load_from_cache(cache_key)
     if cached_df is not None:
+        if _redis:
+            _redis.set(f"market:{cache_key}", cached_df, expire=300)
         return cached_df
 
     df = pd.DataFrame()
@@ -127,6 +159,8 @@ def get_full_market_data():
     
     if not df.empty:
         save_to_cache(cache_key, df)
+        if _redis:
+            _redis.set(f"market:{cache_key}", df, expire=300)
     return df
 
 @st.cache_data(ttl=86400, show_spinner=False) # Streamlit cache extended to 24h
@@ -184,7 +218,17 @@ def generate_ai_report(symbol, name, reports_df, signals):
     except Exception as e: return f"AI 诊断模块加载失败: {e}"
 
 def get_stock_names_batch(codes):
+    """批量获取股票名称 — Redis 缓存 120s"""
     if not codes: return {}
+
+    # L1: Redis (120 秒，按排序的codes作为key)
+    sorted_codes = sorted([c.strip() for c in codes])
+    cache_key = f"names:{'_'.join(sorted_codes)}"
+    if _redis:
+        cached = _redis.get(cache_key)
+        if cached is not None:
+            return cached
+
     sina_codes = [f"{'s_sh' if c.strip().startswith('6') else 's_sz'}{c.strip()}" for c in codes]
     url = f"https://hq.sinajs.cn/list={','.join(sina_codes)}"
     headers = {'Referer': 'https://finance.sina.com.cn/'}
@@ -199,6 +243,9 @@ def get_stock_names_batch(codes):
                     if c.strip() in key: name_map[c.strip()] = name
     except Exception as e:
         logger.warning(f"批量获取股票名称失败: {e}")
+
+    if name_map and _redis:
+        _redis.set(cache_key, name_map, expire=120)
     return name_map
 
 def get_stock_research_reports(symbol):
