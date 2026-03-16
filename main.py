@@ -189,6 +189,8 @@ def find_momentum_stocks():
     if df.empty: return pd.DataFrame()
     try:
         df['涨跌幅'] = pd.to_numeric(df['涨跌幅'], errors='coerce')
+        df['最新价'] = pd.to_numeric(df['最新价'], errors='coerce')
+        df['成交额'] = pd.to_numeric(df['成交额'], errors='coerce')
         mask = (df['涨跌幅'] > 1) & (df['涨跌幅'] < 9)
         filtered = df[mask].copy()
         return filtered.sort_values(by='涨跌幅', ascending=False).head(15)[['代码', '名称', '最新价', '涨跌幅', '成交额']]
@@ -202,6 +204,8 @@ def find_growth_stocks():
     if df.empty: return pd.DataFrame()
     try:
         df['成交额'] = pd.to_numeric(df['成交额'], errors='coerce')
+        df['最新价'] = pd.to_numeric(df['最新价'], errors='coerce')
+        df['涨跌幅'] = pd.to_numeric(df['涨跌幅'], errors='coerce')
         mask = (df['成交额'] > 100000000)
         filtered = df[mask].copy()
         return filtered.sort_values(by='成交额', ascending=False).head(15)[['代码', '名称', '最新价', '涨跌幅', '成交额']]
