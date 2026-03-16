@@ -184,8 +184,7 @@ def _render_strategy_view(L, my_stocks, name_map):
     # 保存策略列表到 session（供分析视图前后切换）
     st.session_state['_strat_list'] = df['代码'].tolist()
 
-    # ---- 紧凑列表渲染 ----
-    rows_html = ""
+    # ---- 紧凑列表渲染 (每行单独渲染) ----
     for rank, (idx, row) in enumerate(df.iterrows(), 1):
         code = str(row.get('代码', ''))
         stock_name = str(row.get('名称', ''))
@@ -200,7 +199,6 @@ def _render_strategy_view(L, my_stocks, name_map):
 
         chg_color = "#ef4444" if change >= 0 else "#10b981"
         chg_icon = "▲" if change >= 0 else "▼"
-        in_wl = "⭐" if code in my_stocks else ""
 
         # 额外数据
         extra = ""
@@ -210,14 +208,14 @@ def _render_strategy_view(L, my_stocks, name_map):
                 pb = float(row.get('PB', 0) or 0)
             except (ValueError, TypeError):
                 pe, pb = 0, 0
-            extra = f'<span style="color:#64748b; font-size:0.75rem;">PE {pe:.1f} · PB {pb:.2f}</span>'
+            extra = f"PE {pe:.1f} · PB {pb:.2f}"
         elif '成交额' in df.columns:
             try:
                 amt = float(row.get('成交额', 0) or 0)
             except (ValueError, TypeError):
                 amt = 0
             if amt > 0:
-                extra = f'<span style="color:#64748b; font-size:0.75rem;">成交 {amt/1e8:.1f}亿</span>'
+                extra = f"成交 {amt/1e8:.1f}亿"
 
         # 排名徽章颜色
         if rank <= 3:
@@ -230,64 +228,39 @@ def _render_strategy_view(L, my_stocks, name_map):
             badge_bg = "rgba(71,85,105,0.2)"
             badge_color = "#94a3b8"
 
-        rows_html += f'''
-        <div style="display:flex; align-items:center; padding:8px 12px;
-             border-bottom: 1px solid rgba(255,255,255,0.04); gap: 10px;">
-            <span style="background:{badge_bg}; color:{badge_color}; font-weight:700;
-                  font-size:0.75rem; padding:2px 7px; border-radius:6px; min-width:28px;
-                  text-align:center;">#{rank}</span>
-            <div style="flex:1; min-width:0;">
-                <span style="font-weight:600; color:#f1f5f9; font-size:0.9rem;">{stock_name}</span>
-                <span style="color:#64748b; font-size:0.75rem; margin-left:4px;">{code}</span>
-                <span style="margin-left:6px;">{in_wl}</span>
-            </div>
-            <div style="text-align:right; min-width:120px;">
-                <span style="font-weight:600; color:#f1f5f9;">¥{price:.2f}</span>
-                <span style="color:{chg_color}; font-size:0.82rem; margin-left:6px;">{chg_icon}{abs(change):.2f}%</span>
-            </div>
-            <div style="min-width:100px; text-align:right;">{extra}</div>
-        </div>'''
+        in_wl = "⭐" if code in my_stocks else ""
 
-    st.markdown(f'''
-<div style="background: rgba(15,23,42,0.4); border: 1px solid rgba(255,255,255,0.06);
-     border-radius: 12px; overflow: hidden; margin: 4px 0;">
-    <div style="display:flex; padding:8px 12px; background:rgba(30,41,59,0.4);
-         border-bottom:1px solid rgba(255,255,255,0.06); font-size:0.75rem; color:#64748b;">
-        <span style="min-width:40px;">#</span>
-        <span style="flex:1;">名称</span>
-        <span style="min-width:120px; text-align:right;">价格 / 涨跌</span>
-        <span style="min-width:100px; text-align:right;">指标</span>
-        <span style="min-width:120px; text-align:right;">操作</span>
-    </div>
-    {rows_html}
-</div>
-''', unsafe_allow_html=True)
+        # 每行: 信息区 | 分析按钮 | 加自选按钮
+        info_col, btn1_col, btn2_col = st.columns([6, 1, 1])
+        with info_col:
+            st.markdown(f'''<div style="display:flex; align-items:center; padding:6px 10px;
+     background:rgba(30,41,59,0.25); border-radius:8px; gap:8px; margin:1px 0;">
+    <span style="background:{badge_bg}; color:{badge_color}; font-weight:700;
+          font-size:0.75rem; padding:2px 7px; border-radius:6px; min-width:24px;
+          text-align:center;">#{rank}</span>
+    <span style="font-weight:600; color:#f1f5f9; font-size:0.88rem;">{stock_name}</span>
+    <span style="color:#64748b; font-size:0.73rem;">{code}</span>
+    <span>{in_wl}</span>
+    <span style="margin-left:auto; font-weight:600; color:#f1f5f9;">¥{price:.2f}</span>
+    <span style="color:{chg_color}; font-size:0.82rem;">{chg_icon}{abs(change):.2f}%</span>
+    <span style="color:#64748b; font-size:0.73rem;">{extra}</span>
+</div>''', unsafe_allow_html=True)
 
-    # 操作按钮（Streamlit 按钮必须在 HTML 外面，用紧凑两列）
-    st.caption("👇 点击操作")
-    btn_cols = st.columns(5)
-    stocks_list = df['代码'].tolist()
-    names_list = df['名称'].tolist()
-
-    for i, (code, sname) in enumerate(zip(stocks_list, names_list)):
-        col_idx = i % 5
-        with btn_cols[col_idx]:
-            bc1, bc2 = st.columns(2)
-            with bc1:
-                if st.button("📊", key=f"a_{code}", help=f"分析 {sname}", use_container_width=True):
-                    st.session_state['selected_stock'] = code
-                    st.session_state['market_view'] = 'analyze'
+        with btn1_col:
+            if st.button("📊", key=f"a_{code}", help=f"分析 {stock_name}", use_container_width=True):
+                st.session_state['selected_stock'] = code
+                st.session_state['market_view'] = 'analyze'
+                st.rerun()
+        with btn2_col:
+            if code not in my_stocks:
+                if st.button("⭐", key=f"w_{code}", help=f"加自选 {stock_name}", use_container_width=True):
+                    my_stocks.append(code)
+                    save_watchlist(my_stocks)
+                    st.toast(f"✅ {stock_name} 已加入自选", icon="⭐")
                     st.rerun()
-            with bc2:
-                if code not in my_stocks:
-                    if st.button("⭐", key=f"w_{code}", help=f"加自选 {sname}", use_container_width=True):
-                        my_stocks.append(code)
-                        save_watchlist(my_stocks)
-                        st.toast(f"✅ {sname} 已加入自选", icon="⭐")
-                        st.rerun()
-                else:
-                    st.button("✓", key=f"w_{code}", disabled=True, use_container_width=True,
-                             help="已在自选")
+            else:
+                st.button("✓", key=f"w_{code}", disabled=True, use_container_width=True,
+                         help="已在自选")
 
 
 def _render_analyze_view(L, my_stocks, name_map):
