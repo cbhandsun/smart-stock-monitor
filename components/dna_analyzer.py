@@ -21,6 +21,99 @@ except ImportError:
     render_tv_chart = None
 
 
+def _render_daily_info(full_symbol, stock_name):
+    """渲染当日基本信息面板 — Sina 实时行情 (Redis 缓存 30s)"""
+    import requests
+    try:
+        # Redis 单例
+        _rc = getattr(_render_daily_info, '_rc', None)
+        if _rc is None:
+            try:
+                from core.cache import RedisCache
+                _rc = RedisCache()
+                _render_daily_info._rc = _rc if _rc.ping() else None
+                _rc = _render_daily_info._rc
+            except Exception:
+                _render_daily_info._rc = False
+                _rc = None
+
+        cache_key = f"quote:daily:{full_symbol}"
+        quote = None
+        if _rc:
+            quote = _rc.get(cache_key)
+
+        if not quote:
+            url = f"https://hq.sinajs.cn/list={full_symbol}"
+            headers = {'Referer': 'https://finance.sina.com.cn/'}
+            r = requests.get(url, headers=headers, timeout=5)
+            raw = r.text.strip()
+            if '="' not in raw or raw.endswith('=""'):
+                return
+            parts = raw.split('="')[1].strip('"').split(',')
+            if len(parts) < 32:
+                return
+            quote = {
+                'name': parts[0],
+                'open': float(parts[1] or 0),
+                'prev_close': float(parts[2] or 0),
+                'price': float(parts[3] or 0),
+                'high': float(parts[4] or 0),
+                'low': float(parts[5] or 0),
+                'volume': float(parts[8] or 0),
+                'amount': float(parts[9] or 0),
+            }
+            pc = quote['prev_close']
+            pr = quote['price']
+            if pc > 0 and pr > 0:
+                quote['change_pct'] = (pr - pc) / pc * 100
+                quote['change_amt'] = pr - pc
+                quote['amplitude'] = (quote['high'] - quote['low']) / pc * 100
+            else:
+                quote['change_pct'] = quote['change_amt'] = quote['amplitude'] = 0
+            if _rc:
+                _rc.set(cache_key, quote, expire=30)
+
+        # 渲染
+        price = quote['price']
+        if price <= 0:
+            return
+        chg_pct = quote['change_pct']
+        chg_amt = quote['change_amt']
+        color = "#ef4444" if chg_pct >= 0 else "#10b981"
+        arrow = "▲" if chg_pct >= 0 else "▼"
+        vol_wan = quote['volume'] / 10000
+        amt_yi = quote['amount'] / 1e8
+
+        st.markdown(f'''<div style="
+            display:flex; align-items:center; gap:16px; padding:10px 16px;
+            background:rgba(30,41,59,0.4); backdrop-filter:blur(12px);
+            border:1px solid rgba(255,255,255,0.06); border-radius:12px; margin:6px 0 10px;
+            flex-wrap:wrap;">
+    <div style="display:flex; align-items:baseline; gap:8px;">
+        <span style="font-family:'Outfit',sans-serif; font-size:1.6rem; font-weight:700; color:{color};">¥{price:.2f}</span>
+        <span style="color:{color}; font-size:0.9rem; font-weight:600;">{arrow}{abs(chg_amt):.2f} ({chg_pct:+.2f}%)</span>
+    </div>
+    <div style="display:flex; gap:16px; margin-left:auto; flex-wrap:wrap;">
+        <div style="text-align:center;"><div style="color:#64748b; font-size:0.65rem;">开盘</div>
+            <div style="color:#e2e8f0; font-size:0.82rem; font-weight:500;">{quote["open"]:.2f}</div></div>
+        <div style="text-align:center;"><div style="color:#64748b; font-size:0.65rem;">最高</div>
+            <div style="color:#ef4444; font-size:0.82rem; font-weight:500;">{quote["high"]:.2f}</div></div>
+        <div style="text-align:center;"><div style="color:#64748b; font-size:0.65rem;">最低</div>
+            <div style="color:#10b981; font-size:0.82rem; font-weight:500;">{quote["low"]:.2f}</div></div>
+        <div style="text-align:center;"><div style="color:#64748b; font-size:0.65rem;">昨收</div>
+            <div style="color:#94a3b8; font-size:0.82rem; font-weight:500;">{quote["prev_close"]:.2f}</div></div>
+        <div style="text-align:center;"><div style="color:#64748b; font-size:0.65rem;">成交量</div>
+            <div style="color:#e2e8f0; font-size:0.82rem; font-weight:500;">{vol_wan:.1f}万手</div></div>
+        <div style="text-align:center;"><div style="color:#64748b; font-size:0.65rem;">成交额</div>
+            <div style="color:#e2e8f0; font-size:0.82rem; font-weight:500;">{amt_yi:.2f}亿</div></div>
+        <div style="text-align:center;"><div style="color:#64748b; font-size:0.65rem;">振幅</div>
+            <div style="color:#e2e8f0; font-size:0.82rem; font-weight:500;">{quote["amplitude"]:.2f}%</div></div>
+    </div>
+</div>''', unsafe_allow_html=True)
+    except Exception:
+        pass
+
+
 def _create_indicator_chart(data, name, theme="dark"):
     """创建技术指标副图"""
     template = "plotly_dark" if theme == "dark" else "plotly_white"
@@ -411,9 +504,18 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
         )
         st.session_state['selected_stock'] = sel_stock
     with refresh_col:
-        if st.button("🔄", key=f"refresh_{id(render_dna_analyzer)}", use_container_width=True, help="刷新数据"):
+        if st.button("🔄", key=f"refresh_{id(render_dna_analyzer)}", use_container_width=True, help="刷新当前标的"):
+            # 仅清除当前股票相关缓存, 不清全局
+            try:
+                from core.cache import RedisCache
+                _rc = RedisCache()
+                if _rc.ping():
+                    for pattern in [f"kline:{sel_stock}*", f"strat:*{sel_stock}*"]:
+                        _rc.delete(pattern)
+            except Exception:
+                pass
             st.cache_data.clear()
-            st.toast("数据已刷新", icon="✨")
+            st.toast(f"📊 {sel_stock} 数据已刷新", icon="✨")
             st.rerun()
 
     # ---- 数据获取 (所有 Tab 共享) ----
@@ -432,8 +534,9 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
     f_data = get_financial_health_score(sel_stock) if get_financial_health_score else None
     q_metrics = calculate_metrics(kline) if calculate_metrics else {}
 
-    # ========== 三大 Tab ==========
-    tab_chart, tab_tech, tab_ai = st.tabs(["📊 行情走势", "🔬 技术分析", "🤖 AI 研判"])
+    # ========== 六大 Tab ==========
+    tab_chart, tab_tech, tab_fund, tab_dragon, tab_ai, tab_profile = st.tabs(
+        ["📊 走势", "🔬 技术", "💰 资金", "🐉 龙虎", "🤖 AI", "🏢 简介"])
 
     # -------- Tab 1: 行情走势 --------
     with tab_chart:
@@ -464,6 +567,9 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
                     else:
                         st.session_state['selected_indicators'].append(key)
                     st.rerun()
+
+        # ---- 当日基本信息面板 ----
+        _render_daily_info(full_symbol, name_map.get(sel_stock, sel_stock))
 
         # K线图
         if not kline.empty and render_tv_chart:
@@ -570,3 +676,401 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
                 st.balloons()
         elif is_cached:
             st.markdown(f"<div class='ai-box'>{cached}</div>", unsafe_allow_html=True)
+
+    # -------- Tab 3: 资金面 --------
+    with tab_fund:
+        st.caption(f"💰 {name_map.get(sel_stock, sel_stock)} 资金面分析 | 数据来源: Tushare Pro")
+        try:
+            from core.tushare_client import get_ts_client
+            ts = get_ts_client()
+            if not ts.available:
+                st.warning("Tushare 未连接，资金面数据不可用")
+            else:
+                fund_c1, fund_c2 = st.columns(2)
+
+                # 个股资金流向
+                with fund_c1:
+                    st.markdown("##### 📊 资金流向 (近 20 日)")
+                    mf = ts.get_moneyflow_single(sel_stock, days=20)
+                    if mf is not None and not mf.empty:
+                        fig_mf = go.Figure()
+                        dates = mf['trade_date'].astype(str)
+                        # 净流入 = 买入 - 卖出
+                        for label, buy_col, sell_col, color in [
+                            ('超大单', 'buy_elg_vol', 'sell_elg_vol', '#ef4444'),
+                            ('大单', 'buy_lg_vol', 'sell_lg_vol', '#f97316'),
+                            ('中单', 'buy_md_vol', 'sell_md_vol', '#3b82f6'),
+                            ('小单', 'buy_sm_vol', 'sell_sm_vol', '#10b981'),
+                        ]:
+                            if buy_col in mf.columns and sell_col in mf.columns:
+                                net = mf[buy_col].astype(float) - mf[sell_col].astype(float)
+                                fig_mf.add_trace(go.Bar(
+                                    x=dates, y=net / 10000,
+                                    name=label, marker_color=color, opacity=0.8
+                                ))
+                        fig_mf.update_layout(
+                            barmode='group', template='plotly_dark',
+                            height=320, margin=dict(l=10, r=10, t=30, b=30),
+                            yaxis_title='净流入(万手)', legend=dict(orientation='h', y=1.02)
+                        )
+                        st.plotly_chart(fig_mf, use_container_width=True, key=f"mf_{sel_stock}")
+
+                        # 总净流入指标
+                        if 'net_mf_vol' in mf.columns:
+                            latest_net = float(mf.iloc[-1]['net_mf_vol'] or 0)
+                            trend = sum(mf['net_mf_vol'].astype(float).tail(5)) / 5
+                            m1, m2 = st.columns(2)
+                            m1.metric("最新净流入", f"{latest_net/10000:.1f}万手")
+                            m2.metric("5日均值", f"{trend/10000:.1f}万手",
+                                     delta="净流入" if trend > 0 else "净流出",
+                                     delta_color="normal" if trend > 0 else "inverse")
+                    else:
+                        st.info("暂无资金流向数据")
+
+                # 融资融券
+                with fund_c2:
+                    st.markdown("##### 📈 融资融券余额 (近 30 日)")
+                    mg = ts.get_margin(sel_stock, days=30)
+                    if mg is not None and not mg.empty:
+                        fig_mg = go.Figure()
+                        dates_mg = mg['trade_date'].astype(str)
+                        if 'rzye' in mg.columns:
+                            rzye = mg['rzye'].astype(float) / 1e8
+                            fig_mg.add_trace(go.Scatter(
+                                x=dates_mg, y=rzye, name='融资余额(亿)',
+                                line=dict(color='#ef4444', width=2), fill='tozeroy',
+                                fillcolor='rgba(239,68,68,0.1)'
+                            ))
+                        if 'rqye' in mg.columns:
+                            rqye = mg['rqye'].astype(float) / 1e8
+                            fig_mg.add_trace(go.Scatter(
+                                x=dates_mg, y=rqye, name='融券余额(亿)',
+                                line=dict(color='#3b82f6', width=2), yaxis='y2'
+                            ))
+                        fig_mg.update_layout(
+                            template='plotly_dark', height=320,
+                            margin=dict(l=10, r=50, t=30, b=30),
+                            yaxis=dict(title='融资余额(亿)'),
+                            yaxis2=dict(title='融券余额(亿)', overlaying='y', side='right'),
+                            legend=dict(orientation='h', y=1.02)
+                        )
+                        st.plotly_chart(fig_mg, use_container_width=True, key=f"mg_{sel_stock}")
+
+                        # 融资指标
+                        if 'rzye' in mg.columns:
+                            latest_rz = float(mg.iloc[-1]['rzye'] or 0) / 1e8
+                            prev_rz = float(mg.iloc[-2]['rzye'] or 0) / 1e8 if len(mg) > 1 else latest_rz
+                            change_rz = latest_rz - prev_rz
+                            m1, m2 = st.columns(2)
+                            m1.metric("融资余额", f"{latest_rz:.2f}亿",
+                                     delta=f"{change_rz:+.2f}亿",
+                                     delta_color="normal" if change_rz > 0 else "inverse")
+                            if 'rzmre' in mg.columns:
+                                rzmre = float(mg.iloc[-1].get('rzmre', 0) or 0) / 1e8
+                                m2.metric("融资买入", f"{rzmre:.2f}亿")
+                    else:
+                        st.info("暂无融资融券数据 (可能该股不支持两融)")
+
+                # 股东人数变化
+                st.divider()
+                st.markdown("##### 👥 股东人数变化")
+                hn = ts.get_holder_number(sel_stock)
+                if hn is not None and not hn.empty:
+                    fig_hn = go.Figure()
+                    hn_sorted = hn.sort_values('end_date')
+                    if 'holder_num' in hn_sorted.columns:
+                        fig_hn.add_trace(go.Scatter(
+                            x=hn_sorted['end_date'].astype(str),
+                            y=hn_sorted['holder_num'].astype(float) / 10000,
+                            name='股东人数(万)', mode='lines+markers',
+                            line=dict(color='#8b5cf6', width=2),
+                            marker=dict(size=8)
+                        ))
+                        fig_hn.update_layout(
+                            template='plotly_dark', height=250,
+                            margin=dict(l=10, r=10, t=30, b=30),
+                            yaxis_title='股东人数(万)'
+                        )
+                        st.plotly_chart(fig_hn, use_container_width=True, key=f"hn_{sel_stock}")
+                        latest_hn = float(hn_sorted.iloc[-1].get('holder_num', 0) or 0)
+                        prev_hn = float(hn_sorted.iloc[-2].get('holder_num', 0) or 0) if len(hn_sorted) > 1 else latest_hn
+                        change_hn = latest_hn - prev_hn
+                        st.caption(f"最新股东人数: {latest_hn/10000:.2f}万 | 变化: {change_hn/10000:+.2f}万 {'(筹码集中)' if change_hn < 0 else '(筹码分散)'}")
+                else:
+                    st.info("暂无股东人数数据")
+        except Exception as e:
+            st.error(f"资金面数据加载失败: {e}")
+
+    # -------- Tab 4: 龙虎榜 --------
+    with tab_dragon:
+        st.caption(f"🐉 {name_map.get(sel_stock, sel_stock)} 龙虎榜 & 大宗交易 | 数据来源: Tushare Pro")
+        try:
+            from core.tushare_client import get_ts_client
+            ts = get_ts_client()
+            if not ts.available:
+                st.warning("Tushare 未连接，龙虎榜数据不可用")
+            else:
+                dragon_c1, dragon_c2 = st.columns([3, 2])
+
+                # 龙虎榜记录
+                with dragon_c1:
+                    st.markdown("##### 📋 龙虎榜上榜记录")
+                    top = ts.get_top_list(symbol=sel_stock)
+                    if top is not None and not top.empty:
+                        display_cols = []
+                        col_rename = {}
+                        for orig, disp in [
+                            ('trade_date', '日期'), ('reason', '上榜原因'),
+                            ('close', '收盘'), ('pct_change', '涨跌幅'),
+                            ('turnover_rate', '换手率'),
+                            ('buy', '买入额(万)'), ('sell', '卖出额(万)'),
+                            ('net_buy', '净买入(万)')  
+                        ]:
+                            if orig in top.columns:
+                                display_cols.append(orig)
+                                col_rename[orig] = disp
+
+                        show_df = top[display_cols].rename(columns=col_rename) if display_cols else top
+                        # 格式化金额为万
+                        for c in ['买入额(万)', '卖出额(万)', '净买入(万)']:
+                            if c in show_df.columns:
+                                show_df[c] = show_df[c].apply(
+                                    lambda x: f"{float(x or 0)/10000:.0f}" if x else '0')
+                        st.dataframe(show_df.head(10), use_container_width=True, hide_index=True)
+                    else:
+                        st.info("该股近期未上龙虎榜")
+
+                    # 营业部明细
+                    st.markdown("##### 🏢 龙虎榜营业部")
+                    inst = ts.get_top_inst(symbol=sel_stock)
+                    if inst is not None and not inst.empty:
+                        inst_cols = []
+                        inst_rename = {}
+                        for orig, disp in [
+                            ('trade_date', '日期'), ('exalter', '营业部'),
+                            ('buy', '买入(万)'), ('sell', '卖出(万)'),
+                            ('net_buy', '净买入(万)'), ('side', '方向')
+                        ]:
+                            if orig in inst.columns:
+                                inst_cols.append(orig)
+                                inst_rename[orig] = disp
+                        show_inst = inst[inst_cols].rename(columns=inst_rename) if inst_cols else inst
+                        for c in ['买入(万)', '卖出(万)', '净买入(万)']:
+                            if c in show_inst.columns:
+                                show_inst[c] = show_inst[c].apply(
+                                    lambda x: f"{float(x or 0)/10000:.0f}" if x else '0')
+                        st.dataframe(show_inst.head(15), use_container_width=True, hide_index=True)
+                    else:
+                        st.info("暂无营业部数据")
+
+                # 大宗交易
+                with dragon_c2:
+                    st.markdown("##### 📦 大宗交易记录")
+                    bt = ts.get_block_trade(symbol=sel_stock, days=60)
+                    if bt is not None and not bt.empty:
+                        bt_cols = []
+                        bt_rename = {}
+                        for orig, disp in [
+                            ('trade_date', '日期'), ('price', '成交价'),
+                            ('vol', '成交量(万股)'), ('amount', '成交额(万)'),
+                            ('buyer', '买方'), ('seller', '卖方')
+                        ]:
+                            if orig in bt.columns:
+                                bt_cols.append(orig)
+                                bt_rename[orig] = disp
+                        show_bt = bt[bt_cols].rename(columns=bt_rename) if bt_cols else bt
+                        if '成交量(万股)' in show_bt.columns:
+                            show_bt['成交量(万股)'] = show_bt['成交量(万股)'].apply(
+                                lambda x: f"{float(x or 0)/10000:.1f}")
+                        if '成交额(万)' in show_bt.columns:
+                            show_bt['成交额(万)'] = show_bt['成交额(万)'].apply(
+                                lambda x: f"{float(x or 0)/10000:.0f}")
+                        st.dataframe(show_bt.head(10), use_container_width=True, hide_index=True)
+
+                        # 大宗交易趋势
+                        if 'amount' in bt.columns and len(bt) > 2:
+                            fig_bt = go.Figure()
+                            bt_sorted = bt.sort_values('trade_date')
+                            fig_bt.add_trace(go.Bar(
+                                x=bt_sorted['trade_date'].astype(str),
+                                y=bt_sorted['amount'].astype(float) / 1e4,
+                                name='成交额(万)', marker_color='#8b5cf6', opacity=0.8
+                            ))
+                            fig_bt.update_layout(
+                                template='plotly_dark', height=250,
+                                margin=dict(l=10, r=10, t=30, b=30),
+                                yaxis_title='成交额(万)'
+                            )
+                            st.plotly_chart(fig_bt, use_container_width=True, key=f"bt_{sel_stock}")
+                    else:
+                        st.info("该股近期无大宗交易")
+
+                # 股东增减持
+                st.divider()
+                st.markdown("##### 📢 股东增减持")
+                ht = ts.get_holder_trade(sel_stock)
+                if ht is not None and not ht.empty:
+                    ht_cols = []
+                    ht_rename = {}
+                    for orig, disp in [
+                        ('ann_date', '公告日'), ('holder_name', '股东名称'),
+                        ('holder_type', '类型'), ('in_de', '增/减持'),
+                        ('change_vol', '变动股数(万)'), ('change_ratio', '占比%'),
+                        ('after_share', '变动后持股(万)'), ('after_ratio', '变动后占比%')
+                    ]:
+                        if orig in ht.columns:
+                            ht_cols.append(orig)
+                            ht_rename[orig] = disp
+                    show_ht = ht[ht_cols].rename(columns=ht_rename) if ht_cols else ht
+                    if '变动股数(万)' in show_ht.columns:
+                        show_ht['变动股数(万)'] = show_ht['变动股数(万)'].apply(
+                            lambda x: f"{float(x or 0)/10000:.1f}")
+                    if '变动后持股(万)' in show_ht.columns:
+                        show_ht['变动后持股(万)'] = show_ht['变动后持股(万)'].apply(
+                            lambda x: f"{float(x or 0)/10000:.1f}")
+                    st.dataframe(show_ht, use_container_width=True, hide_index=True)
+                else:
+                    st.info("暂无股东增减持记录")
+        except Exception as e:
+            st.error(f"龙虎榜数据加载失败: {e}")
+
+    # -------- Tab 6: 公司简介 --------
+    with tab_profile:
+        stock_name_display = name_map.get(sel_stock, sel_stock)
+        st.caption(f"🏢 {stock_name_display} 公司简介 | 数据来源: Tushare Pro")
+        try:
+            from core.tushare_client import get_ts_client
+            ts = get_ts_client()
+            if not ts.available:
+                st.warning("Tushare 未连接，公司简介不可用")
+            else:
+                # 公司详细信息
+                company = ts.get_stock_company(sel_stock)
+                # 基础信息 (行业/地区/上市日期)
+                basics = ts.get_stock_basic()
+                basic_info = {}
+                if basics is not None and not basics.empty:
+                    row = basics[basics['symbol'] == sel_stock]
+                    if not row.empty:
+                        basic_info = row.iloc[0].to_dict()
+
+                if company is not None and not company.empty:
+                    c = company.iloc[0]
+
+                    # ---- 头部: 公司名 + 行业标签 ----
+                    industry = basic_info.get('industry', '')
+                    area = basic_info.get('area', c.get('province', ''))
+                    list_date = basic_info.get('list_date', '')
+                    if list_date and len(str(list_date)) == 8:
+                        list_date = f"{str(list_date)[:4]}-{str(list_date)[4:6]}-{str(list_date)[6:]}"
+
+                    industry_badge = f'<span class="badge badge-info" style="margin-left:8px;">{industry}</span>' if industry else ''
+                    area_badge = f'<span class="badge badge-success" style="margin-left:4px;">{area}</span>' if area else ''
+
+                    st.markdown(f'''<div style="margin-bottom: 16px;">
+    <span style="font-family: Outfit, sans-serif; font-size: 1.4rem; font-weight: 700;
+          color: #f1f5f9;">{stock_name_display}</span>
+    <span style="color: #64748b; font-size: 0.85rem; margin-left: 8px;">{sel_stock}</span>
+    {industry_badge}{area_badge}
+</div>''', unsafe_allow_html=True)
+
+                    # ---- 关键信息卡片 (2列) ----
+                    prof_c1, prof_c2 = st.columns([2, 3])
+
+                    with prof_c1:
+                        chairman = c.get('chairman', '—') or '—'
+                        manager = c.get('manager', '—') or '—'
+                        secretary = c.get('secretary', '—') or '—'
+                        reg_capital = c.get('reg_capital', 0)
+                        try:
+                            reg_capital = float(reg_capital or 0)
+                            reg_str = f"{reg_capital/10000:.2f} 亿元" if reg_capital > 10000 else f"{reg_capital:.0f} 万元"
+                        except (ValueError, TypeError):
+                            reg_str = str(reg_capital)
+                        employees = c.get('employees', 0)
+                        try:
+                            employees = int(float(employees or 0))
+                            emp_str = f"{employees:,} 人"
+                        except (ValueError, TypeError):
+                            emp_str = str(employees)
+                        setup_date = c.get('setup_date', '—') or '—'
+                        if setup_date and len(str(setup_date)) == 8:
+                            setup_date = f"{str(setup_date)[:4]}-{str(setup_date)[4:6]}-{str(setup_date)[6:]}"
+                        website = c.get('website', '') or ''
+                        email = c.get('email', '') or ''
+
+                        # 信息卡
+                        items = [
+                            ('👤 董事长', chairman),
+                            ('👨‍💼 总经理', manager),
+                            ('📝 董秘', secretary),
+                            ('💰 注册资本', reg_str),
+                            ('👥 员工人数', emp_str),
+                            ('📅 成立日期', str(setup_date)),
+                            ('📅 上市日期', str(list_date) if list_date else '—'),
+                        ]
+
+                        rows_html = ''.join(
+                            f'<div style="display:flex; justify-content:space-between; padding:6px 0;'
+                            f' border-bottom:1px solid rgba(255,255,255,0.04);'
+                            f' font-size:0.85rem;">'
+                            f'<span style="color:#94a3b8;">{label}</span>'
+                            f'<span style="color:#e2e8f0; font-weight:500;">{val}</span></div>'
+                            for label, val in items
+                        )
+
+                        web_html = ''
+                        if website:
+                            web_html = (f'<div style="margin-top:10px; font-size:0.82rem;">'
+                                        f'<span style="color:#94a3b8;">🌐 </span>'
+                                        f'<a href="{website}" target="_blank" '
+                                        f'style="color:#38bdf8; text-decoration:none;">{website}</a></div>')
+                        if email:
+                            web_html += (f'<div style="font-size:0.82rem;">'
+                                         f'<span style="color:#94a3b8;">📧 </span>'
+                                         f'<span style="color:#cbd5e1;">{email}</span></div>')
+
+                        st.markdown(f'''<div class="ssm-card">
+    <div style="font-size: 0.9rem; font-weight: 600; color: #f1f5f9;
+         margin-bottom: 10px;">📋 基本信息</div>
+    {rows_html}
+    {web_html}
+</div>''', unsafe_allow_html=True)
+
+                    with prof_c2:
+                        # 主营业务
+                        main_biz = c.get('main_business', '') or ''
+                        if main_biz:
+                            st.markdown(f'''<div class="ssm-card" style="margin-bottom: 12px;">
+    <div style="font-size: 0.9rem; font-weight: 600; color: #f1f5f9;
+         margin-bottom: 8px;">💼 主营业务</div>
+    <div style="color: #cbd5e1; font-size: 0.85rem; line-height: 1.7;">{main_biz}</div>
+</div>''', unsafe_allow_html=True)
+
+                        # 公司简介
+                        intro = c.get('introduction', '') or ''
+                        if intro:
+                            # 截断过长简介并提供展开
+                            if len(intro) > 300:
+                                with st.expander("📖 公司简介", expanded=True):
+                                    st.markdown(f'''<div style="color: #cbd5e1; font-size: 0.85rem;
+                                         line-height: 1.8;">{intro}</div>''',
+                                               unsafe_allow_html=True)
+                            else:
+                                st.markdown(f'''<div class="ssm-card">
+    <div style="font-size: 0.9rem; font-weight: 600; color: #f1f5f9;
+         margin-bottom: 8px;">📖 公司简介</div>
+    <div style="color: #cbd5e1; font-size: 0.85rem; line-height: 1.8;">{intro}</div>
+</div>''', unsafe_allow_html=True)
+
+                        # 经营范围
+                        biz_scope = c.get('business_scope', '') or ''
+                        if biz_scope:
+                            with st.expander("📜 经营范围"):
+                                st.markdown(f'''<div style="color: #94a3b8; font-size: 0.82rem;
+                                     line-height: 1.7;">{biz_scope}</div>''',
+                                           unsafe_allow_html=True)
+                else:
+                    st.info("暂无公司简介数据")
+        except Exception as e:
+            st.error(f"公司简介加载失败: {e}")

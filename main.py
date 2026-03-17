@@ -8,7 +8,14 @@ import time
 import re
 import datetime
 import json
-from modules.data_loader import fetch_trading_signals, fetch_kline
+# 延迟导入 data_loader (akshare 很重, 首屏不需要)
+# from modules.data_loader import fetch_trading_signals, fetch_kline
+def fetch_trading_signals(*a, **kw):
+    from modules.data_loader import fetch_trading_signals as _f
+    return _f(*a, **kw)
+def fetch_kline(*a, **kw):
+    from modules.data_loader import fetch_kline as _f
+    return _f(*a, **kw)
 
 logger = logging.getLogger(__name__)
 
@@ -140,14 +147,35 @@ def get_full_market_data():
         return cached_df
 
     df = pd.DataFrame()
-    # 尝试 EM 源 (AkShare)
+    # 优先 Tushare 当日快照
     try:
-        import akshare as ak
-        df = ak.stock_zh_a_spot_em()
+        from core.tushare_client import get_ts_client
+        ts = get_ts_client()
+        if ts.available:
+            snap = ts.get_daily_snapshot()
+            if snap is not None and not snap.empty:
+                # 获取名称映射
+                name_map = ts.get_name_map()
+                snap['名称'] = snap['ts_code'].apply(
+                    lambda x: name_map.get(x.split('.')[0], x))
+                snap.rename(columns={
+                    'ts_code': '代码', 'pct_chg': '涨跌幅',
+                    'close': '最新价', 'vol': '成交量', 'amount': '成交额'
+                }, inplace=True)
+                snap['代码'] = snap['代码'].apply(lambda x: x.split('.')[0])
+                df = snap
     except Exception as e:
-        logger.warning(f"AkShare 全市场快照获取失败: {e}")
+        logger.warning(f"Tushare 全市场快照获取失败: {e}")
+
+    # 尝试 EM 源 (AkShare)
+    if df.empty:
+        try:
+            import akshare as ak
+            df = ak.stock_zh_a_spot_em()
+        except Exception as e:
+            logger.warning(f"AkShare 全市场快照获取失败: {e}")
     
-    # 如果 EM 依然失败，使用新浪接口兜底
+    # Sina 兜底
     if df.empty:
         pages = []
         for p in range(1, 4):
@@ -221,11 +249,12 @@ def generate_ai_report(symbol, name, reports_df, signals):
         return f"### 🤖 AI 深度诊断 ({name})\n\n{ai_analysis}\n\n> **⚠️ AI 提示**：此报告由 Gemini 大模型实时推理生成，仅供参考。"
     except Exception as e: return f"AI 诊断模块加载失败: {e}"
 
+@st.cache_data(ttl=86400, show_spinner=False)
 def get_stock_names_batch(codes):
-    """批量获取股票名称 — Redis 缓存 120s"""
+    """批量获取股票名称 — Tushare+PG 优先, Sina 兜底 (24h 缓存)"""
     if not codes: return {}
 
-    # L1: Redis (120 秒，按排序的codes作为key)
+    # L1: Redis
     sorted_codes = sorted([c.strip() for c in codes])
     cache_key = f"names:{'_'.join(sorted_codes)}"
     if _redis:
@@ -233,37 +262,86 @@ def get_stock_names_batch(codes):
         if cached is not None:
             return cached
 
-    sina_codes = [f"{'s_sh' if c.strip().startswith('6') else 's_sz'}{c.strip()}" for c in codes]
-    url = f"https://hq.sinajs.cn/list={','.join(sina_codes)}"
-    headers = {'Referer': 'https://finance.sina.com.cn/'}
+    # Tushare + PG 名称表
     name_map = {}
     try:
-        r = requests.get(url, headers=headers, timeout=3)
-        for line in r.text.split(';'):
-            if '="' in line:
-                key = line.split('=')[0].split('_')[-1]
-                name = line.split('="')[1].split(',')[0]
-                for c in codes:
-                    if c.strip() in key: name_map[c.strip()] = name
-    except Exception as e:
-        logger.warning(f"批量获取股票名称失败: {e}")
+        from core.tushare_client import get_ts_client
+        ts_map = get_ts_client().get_name_map()
+        if ts_map:
+            for c in codes:
+                c = c.strip()
+                if c in ts_map:
+                    name_map[c] = ts_map[c]
+            if len(name_map) == len(codes):
+                if _redis:
+                    _redis.set(cache_key, name_map, expire=86400)
+                return name_map
+    except Exception:
+        pass
+
+    # Sina 兜底 (补充 Tushare 找不到的)
+    missing = [c.strip() for c in codes if c.strip() not in name_map]
+    if missing:
+        sina_codes = [f"{'s_sh' if c.startswith('6') else 's_sz'}{c}" for c in missing]
+        url = f"https://hq.sinajs.cn/list={','.join(sina_codes)}"
+        headers = {'Referer': 'https://finance.sina.com.cn/'}
+        try:
+            r = requests.get(url, headers=headers, timeout=3)
+            for line in r.text.split(';'):
+                if '="' in line:
+                    key = line.split('=')[0].split('_')[-1]
+                    name = line.split('="')[1].split(',')[0]
+                    for c in missing:
+                        if c in key: name_map[c] = name
+        except Exception as e:
+            logger.warning(f"Sina 获取股票名称失败: {e}")
 
     if name_map and _redis:
-        _redis.set(cache_key, name_map, expire=120)
+        _redis.set(cache_key, name_map, expire=86400)
     return name_map
 
 def get_stock_reports(symbol):
+    cache_key = f"reports:{symbol}"
+    if _redis:
+        cached = _redis.get(cache_key)
+        if cached is not None:
+            return cached
     try:
         import akshare as ak
-        return ak.stock_zyjs_report_em(symbol=symbol).head(3)
+        result = ak.stock_zyjs_report_em(symbol=symbol).head(3)
+        if not result.empty and _redis:
+            _redis.set(cache_key, result, expire=3600)
+        return result
     except Exception as e:
         logger.warning(f"获取研报失败 {symbol}: {e}")
         return pd.DataFrame()
 
 def get_profit_forecast(symbol):
+    """获取盈利预测 — Tushare 优先, AkShare 兜底"""
+    cache_key = f"forecast:{symbol}"
+    if _redis:
+        cached = _redis.get(cache_key)
+        if cached is not None:
+            return cached
+    # Tushare
+    try:
+        from core.tushare_client import get_ts_client
+        ts = get_ts_client()
+        if ts.available:
+            result = ts.get_forecast(symbol)
+            if result is not None and not result.empty:
+                if _redis:
+                    _redis.set(cache_key, result, expire=3600)
+                return result
+    except Exception:
+        pass
+    # AkShare 兜底
     try:
         import akshare as ak
-        return ak.stock_profit_forecast_em(symbol=symbol).head(1)
+        result = ak.stock_profit_forecast_em(symbol=symbol).head(1)
+        if not result.empty and _redis:
+            _redis.set(cache_key, result, expire=3600)
+        return result
     except Exception as e:
         logger.warning(f"获取盈利预测失败 {symbol}: {e}")
         return pd.DataFrame()
@@ -275,6 +353,11 @@ def get_stock_kline_data(symbol):
     return fetch_kline(symbol)
 
 def get_sector_flow(symbol):
+    cache_key = f"sector_flow:{symbol}"
+    if _redis:
+        cached = _redis.get(cache_key)
+        if cached is not None:
+            return cached
     try:
         import akshare as ak
         sector_flow = ak.stock_sector_fund_flow_rank(indicator="今日")
@@ -284,7 +367,10 @@ def get_sector_flow(symbol):
         try:
             stocks_in_sector = ak.stock_board_industry_cons_em(symbol=sector_name)
             trend_stocks = stocks_in_sector[stocks_in_sector['涨跌幅'] > 2].sort_values(by='涨跌幅', ascending=False)
-            return sector_name, trend_stocks.head(5)
+            result = (sector_name, trend_stocks.head(5))
+            if _redis:
+                _redis.set(cache_key, result, expire=300)
+            return result
         except Exception as e:
             logger.warning(f"获取板块成分股失败 {sector_name}: {e}")
             return sector_name, pd.DataFrame()

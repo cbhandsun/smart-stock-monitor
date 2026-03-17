@@ -43,6 +43,12 @@ class WatchlistManager:
                 if filename.endswith('.json'):
                     with open(os.path.join(self.data_dir, filename), 'r') as f:
                         data = json.load(f)
+                        # 将 stocks 中的 dict 转为 StockPosition 对象
+                        if 'stocks' in data and data['stocks']:
+                            data['stocks'] = [
+                                StockPosition(**s) if isinstance(s, dict) else s
+                                for s in data['stocks']
+                            ]
                         portfolios[data['id']] = Portfolio(**data)
         return portfolios
     

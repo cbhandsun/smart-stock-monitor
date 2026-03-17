@@ -66,9 +66,51 @@ def get_financial_health_score(symbol):
         code = symbol
         if symbol.startswith(('sh', 'sz')):
             code = symbol[2:]
-            
-        # Try to fetch real data
+
+        # 优先 Tushare 财务指标
         df = None
+        try:
+            from core.tushare_client import get_ts_client
+            ts = get_ts_client()
+            if ts.available:
+                ts_df = ts.get_fina_indicator(code)
+                if ts_df is not None and not ts_df.empty:
+                    latest = ts_df.iloc[0]
+                    roe = float(latest.get('roe', 0) or 0)
+                    roa = float(latest.get('roa', 0) or 0)
+                    debt = float(latest.get('debt_to_assets', 0) or 0)
+                    gm = float(latest.get('grossprofit_margin', 0) or 0)
+                    np_yoy = float(latest.get('netprofit_yoy', 0) or 0)
+                    rev_yoy = float(latest.get('or_yoy', 0) or 0)
+                    eps_val = float(latest.get('eps', 0) or 0)
+
+                    score = 50
+                    if roe > 15: score += 20
+                    elif roe > 10: score += 10
+                    if gm > 30: score += 10
+                    elif gm > 15: score += 5
+                    if debt < 50: score += 10
+                    if np_yoy > 0: score += 5
+                    if rev_yoy > 0: score += 5
+                    score = min(100, max(0, score))
+
+                    result = {
+                        'score': int(score),
+                        'analysis': f"基于 Tushare 财务指标：ROE {roe:.1f}%, 毛利率 {gm:.1f}%, 负债率 {debt:.1f}%",
+                        'metrics': {
+                            'ROE': roe, 'ROA': roa, 'DebtRatio': debt,
+                            'GrossMargin': gm, 'ProfitGrowth': np_yoy,
+                            'RevenueGrowth': rev_yoy, 'EPS': eps_val
+                        },
+                        'source': 'tushare'
+                    }
+                    if _redis:
+                        _redis.set(cache_key, result, expire=3600)
+                    return result
+        except Exception:
+            pass
+
+        # AkShare fallback
         try:
             import akshare as ak
             df = ak.stock_financial_analysis_indicator(symbol=code)
@@ -132,13 +174,19 @@ def get_financial_health_score(symbol):
         except Exception as e2:
             print(f"Alternative data fetch error: {e2}")
         
-        # Final fallback with warning
-        return {
+        # Final fallback with warning — 缓存负结果 (300s) 避免反复重试
+        fallback_result = {
             'score': 50,
             'analysis': "⚠️ 财务数据获取失败，请检查网络连接或稍后重试",
             'metrics': {},
             'source': 'unavailable'
         }
+        if _redis:
+            _redis.set(cache_key, fallback_result, expire=300)
+        return fallback_result
         
     except Exception as e:
-        return {'score': 50, 'analysis': "数据获取失败", 'metrics': {}}
+        fallback_result = {'score': 50, 'analysis': "数据获取失败", 'metrics': {}}
+        if _redis:
+            _redis.set(cache_key, fallback_result, expire=300)
+        return fallback_result

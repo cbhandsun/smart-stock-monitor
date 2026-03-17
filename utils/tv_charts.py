@@ -103,16 +103,34 @@ def render_tv_chart(df: pd.DataFrame, height=500, theme="dark", indicators=None)
         <meta charset="utf-8">
         <style>
             body {{ margin: 0; padding: 0; background-color: {bg_color}; overflow: hidden; color: {text_color}; font-family: sans-serif; }}
-            #tv_chart {{ width: 100%; height: {height}px; }}
+            #tv_chart {{ width: 100%; height: {height}px; position: relative; }}
             #error_log {{ color: #ef4444; padding: 10px; word-wrap: break-word; font-size: 14px; }}
             #loading {{ display: flex; align-items: center; justify-content: center; height: {height}px; color: #94a3b8; font-size: 14px; }}
             @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
             .spinner {{ width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.1); border-top-color: #38bdf8; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 10px; }}
+            #legend {{
+                position: absolute; top: 8px; left: 8px; z-index: 10;
+                display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+                padding: 6px 12px;
+                background: rgba(15, 23, 42, 0.75);
+                backdrop-filter: blur(8px);
+                border-radius: 8px;
+                border: 1px solid rgba(255,255,255,0.06);
+                font-size: 12px; color: #94a3b8;
+                pointer-events: none;
+                font-family: 'JetBrains Mono', 'Menlo', monospace;
+            }}
+            #legend .val {{ color: #e2e8f0; font-weight: 600; }}
+            #legend .up {{ color: #ef4444; }}
+            #legend .dn {{ color: #10b981; }}
+            #legend .lbl {{ color: #64748b; margin-right: 2px; }}
         </style>
     </head>
     <body>
         <div id="loading"><div class="spinner"></div>加载图表引擎中...</div>
-        <div id="tv_chart"></div>
+        <div id="tv_chart">
+            <div id="legend"></div>
+        </div>
         <div id="error_log"></div>
         <script>
             // 双 CDN 容灾加载
@@ -227,6 +245,59 @@ def render_tv_chart(df: pd.DataFrame, height=500, theme="dark", indicators=None)
 
                 // 留出右侧空间
                 chart.timeScale().fitContent();
+
+                // ---- 十字光标浮动信息 ----
+                const legendEl = document.getElementById('legend');
+                // 构建 mainData 索引 (time -> bar)
+                const barMap = {{}};
+                mainData.forEach(b => {{ barMap[b.time] = b; }});
+                const volMap = {{}};
+                volumeData.forEach(v => {{ volMap[v.time] = v.value; }});
+
+                function fmtNum(n) {{ return n != null ? n.toFixed(2) : '-'; }}
+                function fmtVol(v) {{
+                    if (v == null) return '-';
+                    if (v >= 1e8) return (v / 1e8).toFixed(2) + '亿';
+                    if (v >= 1e4) return (v / 1e4).toFixed(1) + '万';
+                    return v.toFixed(0);
+                }}
+
+                // 默认显示最新一根
+                function showBar(bar, vol) {{
+                    if (!bar) {{ legendEl.innerHTML = ''; return; }}
+                    const chg = bar.open > 0 ? ((bar.close - bar.open) / bar.open * 100) : 0;
+                    const cls = bar.close >= bar.open ? 'up' : 'dn';
+                    const arrow = bar.close >= bar.open ? '▲' : '▼';
+                    legendEl.innerHTML =
+                        `<span class="lbl">日期</span><span class="val">${{bar.time}}</span>` +
+                        `<span class="lbl">开</span><span class="val">${{fmtNum(bar.open)}}</span>` +
+                        `<span class="lbl">高</span><span class="up">${{fmtNum(bar.high)}}</span>` +
+                        `<span class="lbl">低</span><span class="dn">${{fmtNum(bar.low)}}</span>` +
+                        `<span class="lbl">收</span><span class="${{cls}}">${{fmtNum(bar.close)}}</span>` +
+                        `<span class="${{cls}}">${{arrow}}${{Math.abs(chg).toFixed(2)}}%</span>` +
+                        `<span class="lbl">量</span><span class="val">${{fmtVol(vol)}}</span>`;
+                }}
+
+                // 初始化显示最后一根
+                if (mainData.length > 0) {{
+                    const last = mainData[mainData.length - 1];
+                    showBar(last, volMap[last.time]);
+                }}
+
+                chart.subscribeCrosshairMove(function(param) {{
+                    if (!param.time) {{
+                        // 光标移出图表区域，显示最新
+                        if (mainData.length > 0) {{
+                            const last = mainData[mainData.length - 1];
+                            showBar(last, volMap[last.time]);
+                        }}
+                        return;
+                    }}
+                    const bar = barMap[param.time];
+                    const vol = volMap[param.time];
+                    showBar(bar, vol);
+                }});
+
             }} catch (err) {{
                 document.getElementById('error_log').innerHTML += '<p>Catch: ' + err.message + '</p>';
             }}

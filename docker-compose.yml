@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   stock-monitor:
     build: .
@@ -17,12 +15,22 @@ services:
       - ./components:/app/components
       - ./modules:/app/modules
       - ./core:/app/core
+      - ./static:/app/static
     environment:
       - PYTHONUNBUFFERED=1
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - PG_HOST=postgres
+      - PG_PORT=5432
+      - PG_USER=ssm
+      - PG_PASSWORD=ssm_secure_2026
+      - PG_DATABASE=stock_data
+    env_file:
+      - .env
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
@@ -31,6 +39,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
   redis:
     image: redis:7-alpine
     container_name: ssm-redis
@@ -47,6 +56,27 @@ services:
       retries: 3
       start_period: 5s
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: ssm-postgres
+    environment:
+      POSTGRES_USER: ssm
+      POSTGRES_PASSWORD: ssm_secure_2026
+      POSTGRES_DB: stock_data
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ssm -d stock_data"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
 volumes:
   redis_data:
+    driver: local
+  pg_data:
     driver: local

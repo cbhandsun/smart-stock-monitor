@@ -12,6 +12,14 @@ from dataclasses import dataclass
 from datetime import datetime
 import pandas as pd
 
+try:
+    from core.cache import RedisCache
+    _redis_cache = RedisCache()
+    if not _redis_cache.ping():
+        _redis_cache = None
+except Exception:
+    _redis_cache = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -71,7 +79,7 @@ class AkshareSource(DataSource):
     """AkShare 数据源"""
     
     def __init__(self):
-        super().__init__("AkShare", priority=1)
+        super().__init__("AkShare", priority=3)
         self._ak = None
     
     def _get_ak(self):
@@ -132,7 +140,7 @@ class TushareSource(DataSource):
     """Tushare 数据源（需要 API Key）"""
     
     def __init__(self, token: Optional[str] = None):
-        super().__init__("Tushare", priority=2)
+        super().__init__("Tushare", priority=1)
         self.token = token or os.getenv("TUSHARE_TOKEN")
         self._pro = None
     
@@ -246,15 +254,15 @@ class DataRouter:
     
     def _init_sources(self):
         """初始化所有数据源"""
-        # 按优先级添加数据源
-        self.sources.append(AkshareSource())
-        
         tushare_token = os.getenv("TUSHARE_TOKEN")
         if tushare_token:
             self.sources.append(TushareSource(tushare_token))
-        
+
+        # AkShare 降为备选
+        self.sources.append(AkshareSource())
+
         self.sources.append(BaostockSource())
-        
+
         # 按优先级排序
         self.sources.sort(key=lambda x: x.priority)
     
@@ -267,15 +275,23 @@ class DataRouter:
     
     def get_daily(self, symbol: str) -> Optional[pd.DataFrame]:
         """
-        获取日线数据 - 自动切换数据源
+        获取日线数据 - Redis L1 + 内存 L2 + 自动切换数据源
         """
-        cache_key = f"daily_{symbol}"
+        cache_key = f"router:daily:{symbol}"
         
-        # 检查缓存
-        if cache_key in self.cache:
-            cached_time, data = self.cache[cache_key]
+        # L1: Redis
+        if _redis_cache:
+            cached = _redis_cache.get(cache_key)
+            if cached is not None:
+                logger.debug(f"Redis 缓存命中: {symbol}")
+                return cached
+        
+        # L2: 内存缓存
+        mem_key = f"daily_{symbol}"
+        if mem_key in self.cache:
+            cached_time, data = self.cache[mem_key]
             if (datetime.now() - cached_time).seconds < self.cache_ttl:
-                logger.debug(f"返回缓存数据: {symbol}")
+                logger.debug(f"内存缓存命中: {symbol}")
                 return data
         
         # 按优先级尝试各个数据源
@@ -284,8 +300,10 @@ class DataRouter:
                 logger.info(f"尝试从 {source.name} 获取 {symbol}")
                 df = source.get_daily(symbol)
                 if df is not None and not df.empty:
-                    # 缓存结果
-                    self.cache[cache_key] = (datetime.now(), df)
+                    # 写入双层缓存
+                    self.cache[mem_key] = (datetime.now(), df)
+                    if _redis_cache:
+                        _redis_cache.set(cache_key, df, expire=300)
                     logger.info(f"✅ {source.name} 成功获取 {symbol}")
                     return df
             except Exception as e:
@@ -297,13 +315,20 @@ class DataRouter:
     
     def get_realtime(self, symbol: str) -> Optional[Dict]:
         """
-        获取实时行情 - 自动切换数据源
+        获取实时行情 - Redis L1 + 内存 L2 + 自动切换数据源
         """
-        cache_key = f"realtime_{symbol}"
+        cache_key = f"router:realtime:{symbol}"
         
-        # 实时数据缓存5秒
-        if cache_key in self.cache:
-            cached_time, data = self.cache[cache_key]
+        # L1: Redis (实时数据 10s)
+        if _redis_cache:
+            cached = _redis_cache.get(cache_key)
+            if cached is not None:
+                return cached
+        
+        # L2: 内存缓存 5s
+        mem_key = f"realtime_{symbol}"
+        if mem_key in self.cache:
+            cached_time, data = self.cache[mem_key]
             if (datetime.now() - cached_time).seconds < 5:
                 return data
         
@@ -311,7 +336,9 @@ class DataRouter:
             try:
                 data = source.get_realtime(symbol)
                 if data:
-                    self.cache[cache_key] = (datetime.now(), data)
+                    self.cache[mem_key] = (datetime.now(), data)
+                    if _redis_cache:
+                        _redis_cache.set(cache_key, data, expire=10)
                     return data
             except Exception as e:
                 logger.warning(f"{source.name} 获取实时数据失败: {e}")

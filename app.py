@@ -47,203 +47,27 @@ if 'authenticated' not in st.session_state:
 # ---- Language Dictionary (centralized) ----
 L = get_lang(st.session_state['lang'])
 
+# ---- PostgreSQL 初始化 (仅执行一次) ----
+if 'pg_initialized' not in st.session_state:
+    try:
+        from core.database import init_tables
+        init_tables()
+    except Exception as e:
+        logger.warning(f"PG 初始化跳过: {e}")
+    st.session_state['pg_initialized'] = True
+
 # ---- Auth Gate ----
 # if AUTH_AVAILABLE and not check_auth():
 #     render_login_page()
 #     st.stop()
 
-# ---- Theme CSS ----
-theme_css = """
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono&display=swap');
-
-    /* Global Typography */
-    html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif;
-    }
-
-    h1, h2, h3, h4, h5, h6, .st-emotion-cache-10trblm, [data-testid="stMetricLabel"] > div, .strat-banner {
-        font-family: 'Outfit', sans-serif !important;
-        letter-spacing: -0.02em;
-    }
-
-    /* Core Background Colors */
-    .main {
-        background-color: #0b1120;
-        color: #f8fafc;
-    }
-
-    /* Glassmorphism Metrics */
-    div[data-testid="stMetric"] {
-        background: rgba(30, 41, 59, 0.4) !important;
-        backdrop-filter: blur(12px) !important;
-        -webkit-backdrop-filter: blur(12px) !important;
-        border: 1px solid rgba(255, 255, 255, 0.08) !important;
-        box-shadow: 0 4px 24px -4px rgba(0, 0, 0, 0.2) !important;
-        border-radius: 16px !important;
-        padding: 24px !important;
-        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-    }
-    
-    div[data-testid="stMetric"]:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 12px 32px -4px rgba(56, 189, 248, 0.15) !important;
-        border-color: rgba(56, 189, 248, 0.3) !important;
-    }
-
-    div[data-testid="stMetricLabel"] > div {
-        color: #94a3b8 !important;
-        font-weight: 500 !important;
-        font-size: 0.95rem !important;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-    }
-    div[data-testid="stMetricValue"] > div {
-        color: #f8fafc !important;
-        font-family: 'Outfit', sans-serif !important;
-        font-weight: 700 !important;
-        font-size: 2.5rem !important;
-    }
-    div[data-testid="stMetricDelta"] svg {
-        margin-top: 2px;
-    }
-
-    /* Premium Sidebar */
-    [data-testid="stSidebar"] {
-        background-color: #030712 !important;
-        border-right: 1px solid rgba(255, 255, 255, 0.05);
-    }
-
-    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3,
-    [data-testid="stSidebar"] p, [data-testid="stSidebar"] label, [data-testid="stSidebar"] span {
-        color: #f1f5f9 !important;
-    }
-
-    /* Standard Buttons */
-    button[data-testid="baseButton-secondary"] {
-        background-color: rgba(30, 41, 59, 0.6) !important;
-        color: #cbd5e1 !important;
-        border: 1px solid rgba(255, 255, 255, 0.1) !important;
-        border-radius: 10px !important;
-        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    }
-    button[data-testid="baseButton-secondary"]:hover {
-        background-color: #1e293b !important;
-        border-color: #38bdf8 !important;
-        color: #fff !important;
-        box-shadow: 0 0 15px rgba(56, 189, 248, 0.2);
-    }
-
-    /* Primary Buttons (Active State) */
-    button[data-testid="baseButton-primary"] {
-        background: linear-gradient(135deg, #2563eb 0%, #38bdf8 100%) !important;
-        color: #ffffff !important;
-        font-weight: 600 !important;
-        border: none !important;
-        border-radius: 10px !important;
-        box-shadow: 0 4px 14px rgba(56, 189, 248, 0.3) !important;
-        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    }
-    
-    button[data-testid="baseButton-primary"]:hover {
-        box-shadow: 0 6px 20px rgba(56, 189, 248, 0.5) !important;
-        transform: translateY(-1px);
-    }
-
-    /* Segmented Controls (Tabs) */
-    .stTabs [data-baseweb="tab-list"] {
-        background: rgba(30, 41, 59, 0.5);
-        border: 1px solid rgba(255, 255, 255, 0.05);
-        padding: 6px;
-        border-radius: 14px;
-        gap: 4px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        color: #94a3b8 !important;
-        font-weight: 500;
-        border-radius: 10px;
-        padding: 8px 16px;
-        transition: all 0.2s ease;
-    }
-    .stTabs [data-baseweb="tab"]:hover {
-        color: #e2e8f0 !important;
-        background: rgba(255,255,255,0.05);
-    }
-    .stTabs [data-baseweb="tab"][aria-selected="true"] {
-        background: #1e293b !important;
-        color: white !important;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
-        border: 1px solid rgba(255,255,255,0.1);
-    }
-
-    /* AI Box Premium Styling */
-    .ai-box {
-        background: linear-gradient(145deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.8) 100%);
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
-        border: 1px solid rgba(139, 92, 246, 0.3);
-        border-left: 4px solid #8b5cf6;
-        padding: 28px;
-        border-radius: 16px;
-        color: #f1f5f9;
-        line-height: 1.8;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-    }
-    .ai-box h3 {
-        color: #a78bfa !important;
-        margin-top: 0;
-        font-family: 'Outfit', sans-serif;
-    }
-
-    /* Hide Streamlit native sidebar navigation */
-    [data-testid="stSidebarNav"] {
-        display: none !important;
-    }
-
-    /* ---- 导航分组 Expander 美化 ---- */
-    [data-testid="stSidebar"] details {
-        background: rgba(15, 23, 42, 0.5) !important;
-        border: 1px solid rgba(255, 255, 255, 0.06) !important;
-        border-radius: 12px !important;
-        margin-bottom: 6px !important;
-        transition: border-color 0.2s ease;
-    }
-    [data-testid="stSidebar"] details:hover {
-        border-color: rgba(56, 189, 248, 0.2) !important;
-    }
-    [data-testid="stSidebar"] details summary {
-        font-family: 'Outfit', sans-serif !important;
-        font-weight: 600 !important;
-        font-size: 0.9rem !important;
-        color: #94a3b8 !important;
-    }
-    [data-testid="stSidebar"] details[open] summary {
-        color: #38bdf8 !important;
-    }
-
-    /* ---- 骨架屏加载动画 ---- */
-    @keyframes skeleton-pulse {
-        0% { opacity: 0.6; }
-        50% { opacity: 1; }
-        100% { opacity: 0.6; }
-    }
-    .skeleton-loading {
-        animation: skeleton-pulse 1.5s ease-in-out infinite;
-        background: linear-gradient(90deg, rgba(30,41,59,0.5) 25%, rgba(51,65,85,0.5) 50%, rgba(30,41,59,0.5) 75%);
-        background-size: 200% 100%;
-        border-radius: 8px;
-        height: 20px;
-        margin: 8px 0;
-    }
-
-    /* ---- 导航按钮活跃态发光 ---- */
-    [data-testid="stSidebar"] button[data-testid="baseButton-primary"] {
-        box-shadow: 0 0 12px rgba(56, 189, 248, 0.4), 0 4px 14px rgba(56, 189, 248, 0.2) !important;
-    }
-
-    </style>
-"""
-st.markdown(theme_css, unsafe_allow_html=True)
+# ---- Theme CSS (external file) ----
+import pathlib as _pathlib
+_css_path = _pathlib.Path(__file__).parent / 'static' / 'theme.css'
+if _css_path.exists():
+    st.markdown(f'<style>{_css_path.read_text()}</style>', unsafe_allow_html=True)
+else:
+    logger.warning("static/theme.css not found, using defaults")
 
 # ---- Sidebar Navigation ----
 with st.sidebar:
@@ -268,40 +92,31 @@ with st.sidebar:
     my_stocks = load_watchlist()
     name_map = get_stock_names_batch(my_stocks)
 
-    # 尝试批量获取实时行情 (轻量级) — Redis L1 缓存 30s
-    _quotes = {}
-    if my_stocks:
+    # 侧边栏行情 — @st.cache_data 避免每次 rerun 阻塞
+    @st.cache_data(ttl=30, show_spinner=False)
+    def _fetch_sidebar_quotes(stocks_tuple):
+        """缓存侧边栏行情 (30s TTL)"""
+        quotes = {}
+        if not stocks_tuple:
+            return quotes
         try:
-            from core.cache import RedisCache
-            _rc = RedisCache()
-            if _rc.ping():
-                cached = _rc.get("sidebar:watchlist_quotes")
-                if cached:
-                    _quotes = cached
+            import requests
+            sina_codes = [f"{'s_sh' if c.startswith('6') else 's_sz'}{c}" for c in stocks_tuple[:10]]
+            url = f"https://hq.sinajs.cn/list={','.join(sina_codes)}"
+            headers = {'Referer': 'https://finance.sina.com.cn/'}
+            r = requests.get(url, headers=headers, timeout=3)
+            for line in r.text.strip().split(';'):
+                if '="' in line:
+                    val = line.split('="')[1].strip('"')
+                    parts = val.split(',')
+                    if len(parts) > 3:
+                        code = parts[0]
+                        quotes[code] = {'price': float(parts[1]), 'change': float(parts[3])}
         except Exception:
             pass
+        return quotes
 
-        if not _quotes:
-            try:
-                import requests
-                sina_codes = [f"{'s_sh' if c.startswith('6') else 's_sz'}{c}" for c in my_stocks[:10]]
-                url = f"https://hq.sinajs.cn/list={','.join(sina_codes)}"
-                headers = {'Referer': 'https://finance.sina.com.cn/'}
-                r = requests.get(url, headers=headers, timeout=3)
-                for line in r.text.strip().split(';'):
-                    if '="' in line:
-                        val = line.split('="')[1].strip('"')
-                        parts = val.split(',')
-                        if len(parts) > 3:
-                            code = parts[0]
-                            _quotes[code] = {'price': float(parts[1]), 'change': float(parts[3])}
-                # 写入 Redis
-                try:
-                    _rc.set("sidebar:watchlist_quotes", _quotes, expire=30)
-                except Exception:
-                    pass
-            except Exception:
-                pass
+    _quotes = _fetch_sidebar_quotes(tuple(my_stocks))
 
     with st.expander(f"⭐ 我的自选 ({len(my_stocks)})", expanded=False):
         for s in my_stocks[:10]:
@@ -353,7 +168,6 @@ with st.sidebar:
 
     with st.expander("📡 看盘中心", expanded=True):
         _nav_btn('market', L['market_discovery'])
-        _nav_btn('ai_tracker', '📡 AI 赛道雷达')
         _nav_btn('portfolio', L['portfolio'])
 
     with st.expander("🤖 AI 智能体", expanded=False):
@@ -373,6 +187,35 @@ with st.sidebar:
         _nav_btn('settings', L['settings'])
 
     st.divider()
+
+    # ---- 系统状态指示器 ----
+    import datetime as _dt
+    _redis_ok = False
+    try:
+        from core.cache import RedisCache as _RC
+        _rc_inst = _RC()
+        _redis_ok = _rc_inst.ping()
+    except Exception:
+        pass
+    _ts_ok = False
+    try:
+        from core.tushare_client import get_ts_client as _get_ts
+        _ts_ok = _get_ts().available
+    except Exception:
+        pass
+
+    _r_dot = '🟢' if _redis_ok else '🔴'
+    _t_dot = '🟢' if _ts_ok else '🔴'
+    _now = _dt.datetime.now().strftime('%H:%M')
+    st.markdown(f'''
+<div style="background: rgba(15,23,42,0.5); border: 1px solid rgba(255,255,255,0.04);
+     border-radius: 10px; padding: 10px 12px; font-size: 0.72rem; line-height: 1.8;">
+    <div style="color: #475569; font-weight: 600; margin-bottom: 2px;">系统状态</div>
+    <div style="color: #94a3b8;">{_r_dot} Redis {'在线' if _redis_ok else '离线'}
+        &nbsp; {_t_dot} Tushare {'在线' if _ts_ok else '离线'}</div>
+    <div style="color: #475569;">🕐 {_now} 更新</div>
+</div>
+''', unsafe_allow_html=True)
 
 # ---- 全局标的指示器 ----
 from components.ui_components import stock_context_bar
@@ -410,5 +253,13 @@ if current_page in PAGE_RENDER_ARGS:
 else:
     st.error(f"未知页面: {current_page}")
 
-st.divider()
-st.caption("SSM Quantum Pro v7.0 | AI 量化投研工作站")
+st.markdown('''<div style="margin-top: 32px; padding-top: 16px;
+    border-top: 1px solid rgba(255,255,255,0.04);">
+    <div style="text-align: center; font-size: 0.75rem; color: #475569;">
+        <span style="font-family: Outfit, sans-serif; font-weight: 600; letter-spacing: 0.05em;">SSM QUANTUM PRO</span>
+        <span style="margin-left: 6px; background: rgba(56,189,248,0.1); color: #38bdf8;
+              padding: 1px 8px; border-radius: 8px; font-size: 0.68rem;">v7.0</span>
+        <br>
+        <span style="color: #334155;">AI 量化投研工作站</span>
+    </div>
+</div>''', unsafe_allow_html=True)

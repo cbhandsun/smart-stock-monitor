@@ -24,21 +24,37 @@ def render(L):
             tab1, tab2, tab3 = st.tabs(["趋势预测", "风险评估", "支撑阻力"])
 
             with tab1:
-                method_map = {"线性回归": "linear", "多项式": "poly", "随机森林": "rf"}
-                method_label = st.selectbox("预测方法", list(method_map.keys()))
+                method_map = {"线性回归": "linear", "多项式": "poly", "随机森林": "rf", "梯度提升(GBDT)": "gbdt"}
+                method_label = st.selectbox("预测方法", list(method_map.keys()), index=3)
                 method = method_map[method_label]
                 days = st.slider("预测天数", 1, 30, 5)
 
                 if st.button("开始预测", type="primary"):
-                    result = predictor.trend_prediction(kline, days=days, method=method)
+                    with st.status("🔮 正在训练模型...") as status:
+                        st.write("📐 构建技术特征 (MA/RSI/MACD/波动率/动量/量比)...")
+                        result = predictor.trend_prediction(kline, days=days, method=method)
+                        if 'error' not in result:
+                            status.update(label=f"✅ 预测完成 — 方向准确率 {result.get('direction_accuracy', '?')}%",
+                                         state="complete")
+                        else:
+                            status.update(label="❌ 预测失败", state="error")
 
                     if 'error' not in result:
                         col1, col2, col3 = st.columns(3)
+                        change_val = result['expected_change']
+                        change_color = "#ef4444" if change_val >= 0 else "#10b981"
                         col1.metric("当前价格", f"{result['current_price']:.2f}")
                         col2.metric("预测价格", f"{result['predicted_price']:.2f}")
-                        col3.metric("预期涨跌", f"{result['expected_change']:.2f}%")
+                        col3.metric("预期涨跌", f"{change_val:+.2f}%")
 
-                        st.progress(result['confidence'] / 100, text=f"置信度: {result['confidence']:.1f}%")
+                        # 置信度 + 方向准确率
+                        conf = result['confidence']
+                        dir_acc = result.get('direction_accuracy', 0)
+                        c_col1, c_col2 = st.columns(2)
+                        with c_col1:
+                            st.progress(conf / 100, text=f"综合置信度: {conf:.1f}%")
+                        with c_col2:
+                            st.progress(dir_acc / 100, text=f"方向准确率: {dir_acc:.1f}%")
 
                         fig = go.Figure()
                         dates = list(kline['日期'])
@@ -48,7 +64,7 @@ def render(L):
                         future_dates = pd.date_range(start=dates[-1], periods=days + 1)[1:]
                         fig.add_trace(go.Scatter(
                             x=future_dates, y=result['predictions'],
-                            name='预测价格', line=dict(color='#10b981', dash='dash')
+                            name='预测价格', line=dict(color='#10b981', dash='dash', width=2.5)
                         ))
                         fig.update_layout(template="plotly_dark", height=400)
                         st.plotly_chart(fig, use_container_width=True)

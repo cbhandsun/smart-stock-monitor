@@ -27,6 +27,45 @@ AI_SECTORS = {
     }
 }
 
+
+def get_ai_sector_df(sector_key=None):
+    """
+    获取 AI 板块股票数据，返回与 market 策略选股兼容的 DataFrame
+    sector_key: None=全部, 'ai_compute'/'ai_servers'/'aigc_apps'
+    返回 DataFrame 包含: 代码, 名称, 最新价, 涨跌幅, 板块
+    """
+    if sector_key and sector_key in AI_SECTORS:
+        sectors = {sector_key: AI_SECTORS[sector_key]}
+    else:
+        sectors = AI_SECTORS
+
+    all_symbols = []
+    symbol_sector = {}
+    for key, data in sectors.items():
+        for s in data["stocks"]:
+            all_symbols.append(s)
+            symbol_sector[s] = data["name"]
+
+    if not all_symbols:
+        return pd.DataFrame()
+
+    name_map = get_stock_names_batch(all_symbols)
+    live_quotes = fetch_quotes_concurrent(all_symbols)
+
+    rows = []
+    for sym in all_symbols:
+        q = live_quotes.get(sym, {})
+        rows.append({
+            "代码": sym,
+            "名称": name_map.get(sym, sym),
+            "最新价": float(q.get("最新价", 0)),
+            "涨跌幅": float(q.get("涨跌幅", 0)),
+            "板块": symbol_sector.get(sym, ""),
+        })
+
+    return pd.DataFrame(rows)
+
+
 def _init_ai_portfolios():
     """Ensure our AI tracking portfolios are seeded in the Watchlist Manager"""
     existing = {p.name: p.id for p in watchlist_manager.list_portfolios()}
@@ -47,6 +86,7 @@ def render(L, my_stocks, name_map):
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown(f"### 📡 AI Sector Tracker (人工智能核心赛道雷达)")
     st.caption("实时跟踪 A 股核心 AI 子板块龙头，捕捉产业链轮动带来的买卖共振点。")
+    st.info("💡 提示：AI 赛道已融入「📡 市场信号流」的策略选股视图，可在那里使用完整的 选股→分析→跟盘 流程。")
     st.divider()
 
     # Pre-flight check to bootstrap data
@@ -144,3 +184,4 @@ def render(L, my_stocks, name_map):
 
     # Append DNA Analyzer globally to the page
     render_dna_analyzer(L, my_stocks, name_map)
+

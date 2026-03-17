@@ -8,6 +8,10 @@ openai==1.70.0
 python-dotenv==1.0.1
 requests>=2.31.0
 
+# Data Sources
+tushare>=1.4.2
+psycopg2-binary>=2.9.9
+
 # v7.0 Quantum Pro
 redis==5.2.1
 celery==5.4.0
