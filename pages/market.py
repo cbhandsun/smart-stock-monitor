@@ -20,39 +20,55 @@ from components.ui_components import stock_selector
 def render(L, my_stocks, name_map):
     """渲染市场页面"""
 
+    # 首次加载(全新会话)默认选股; 页面内切换靠按钮管理 market_view
     if 'market_view' not in st.session_state:
         st.session_state['market_view'] = 'strategy'
 
-    # ========== 标题行: 标题 + 搜索 + 刷新 ==========
-    title_col, search_col, refresh_col = st.columns([3, 5, 1])
-    with title_col:
-        st.markdown(f"## 📡 {L.get('market_discovery', '实时信号流')}")
-    with search_col:
-        code = stock_selector(label="快速跳转分析", key_suffix="market_search")
+    current_view = st.session_state['market_view']
+
+    # ========== 紧凑头部: 标题 | 导航 | 搜索 | 刷新 ==========
+    h1, h2, h3, h4, h5, h6 = st.columns([2.5, 1, 1, 1, 3, 0.5])
+    with h1:
+        st.markdown(f"### 📡 {L.get('market_discovery', '实时信号流')}")
+    with h2:
+        if st.button("📋选股", use_container_width=True,
+                     type="primary" if current_view == 'strategy' else "secondary",
+                     key="nav_strategy"):
+            st.session_state['market_view'] = 'strategy'
+            st.rerun()
+    with h3:
+        if st.button("📊分析", use_container_width=True,
+                     type="primary" if current_view == 'analyze' else "secondary",
+                     key="nav_analyze"):
+            st.session_state['market_view'] = 'analyze'
+            st.rerun()
+    with h4:
+        if st.button("⭐跟盘", use_container_width=True,
+                     type="primary" if current_view == 'track' else "secondary",
+                     key="nav_track"):
+            st.session_state['market_view'] = 'track'
+            st.rerun()
+    with h5:
+        code = stock_selector(label="快速跳转", key_suffix="market_search")
         if code and code != st.session_state.get('_last_market_search', ''):
             st.session_state['_last_market_search'] = code
             st.session_state['selected_stock'] = code
             st.session_state['market_view'] = 'analyze'
             st.rerun()
-    with refresh_col:
+    with h6:
         if st.button("🔄", key="refresh_market", use_container_width=True, help="刷新行情"):
             st.cache_data.clear()
-            st.toast("市场行情已刷新", icon="📈")
+            st.toast("行情已刷新", icon="📈")
             st.rerun()
 
     # ========== 大盘指数: 内联紧凑条 ==========
     _render_market_bar()
 
-    # ========== Tab 导航 (替代进度条+按钮) ==========
-    tab_strategy, tab_analyze, tab_track = st.tabs(["📋 选股", "📊 分析", "⭐ 跟盘"])
-
-    with tab_strategy:
+    if current_view == 'strategy':
         _render_strategy_view(L, my_stocks, name_map)
-
-    with tab_analyze:
+    elif current_view == 'analyze':
         _render_analyze_view(L, my_stocks, name_map)
-
-    with tab_track:
+    elif current_view == 'track':
         _render_track_view(L, my_stocks, name_map)
 
 
@@ -95,7 +111,7 @@ def _render_market_bar():
 def _render_stock_row(code, stock_name, price, change, rank=0, extra="",
                       my_stocks=None, name_map=None, show_signals=True,
                       btn_prefix="s", show_watchlist_btn=True, show_remove_btn=False):
-    """紧凑单行渲染 — 通用组件，选股/跟盘共用"""
+    """紧凑双行卡片 — 通用组件，选股/跟盘共用"""
     if my_stocks is None:
         my_stocks = []
 
@@ -115,41 +131,89 @@ def _render_stock_row(code, stock_name, price, change, rank=0, extra="",
     else:
         rank_html = ""
 
-    # 信号
-    sig_html = ""
+    # 信号 + 指标
+    metrics_html = ""
+    action_badge = ""
     if show_signals:
         signals = _get_quick_signals(code)
-        status_color = {"看多": "#ef4444", "看空": "#10b981", "震荡": "#f59e0b"}.get(
-            signals['status'].split(' ')[0] if signals['status'] != '—' else '', '#64748b')
+
+        # 操作建议 badge (第一行右侧)
+        action_color = {"买入": "#ef4444", "卖出": "#10b981", "持有": "#3b82f6", "观望": "#64748b"}.get(
+            signals['action_short'], '#94a3b8')
+        action_bg = {"买入": "rgba(239,68,68,0.15)", "卖出": "rgba(16,185,129,0.15)",
+                     "持有": "rgba(59,130,246,0.15)", "观望": "rgba(100,116,139,0.1)"}.get(
+            signals['action_short'], 'rgba(100,116,139,0.1)')
+        action_badge = (f'<span style="background:{action_bg};color:{action_color};'
+                       f'padding:2px 8px;border-radius:10px;font-size:0.75rem;font-weight:600;'
+                       f'white-space:nowrap;">{signals["action"]}</span>')
+
+        # 第二行指标 pills
+        rsi = signals.get('rsi', 50)
+        vol_ratio = signals.get('vol_ratio', 1.0)
+        score = signals.get('score', 0)
+        ma_pos = signals.get('ma_pos', '—')
+        macd_dir = signals.get('macd_dir', '—')
+
+        # RSI 颜色
+        if rsi > 70: rsi_c, rsi_bg = '#ef4444', 'rgba(239,68,68,0.12)'
+        elif rsi < 30: rsi_c, rsi_bg = '#10b981', 'rgba(16,185,129,0.12)'
+        else: rsi_c, rsi_bg = '#94a3b8', 'rgba(148,163,184,0.08)'
+
+        # 量比颜色
+        if vol_ratio > 2.0: vr_c, vr_bg = '#ef4444', 'rgba(239,68,68,0.12)'
+        elif vol_ratio > 1.2: vr_c, vr_bg = '#f59e0b', 'rgba(245,158,11,0.12)'
+        else: vr_c, vr_bg = '#94a3b8', 'rgba(148,163,184,0.08)'
+
+        # 评分颜色
+        if score >= 4: sc_c, sc_bg = '#ef4444', 'rgba(239,68,68,0.12)'
+        elif score >= 3: sc_c, sc_bg = '#f59e0b', 'rgba(245,158,11,0.12)'
+        elif score <= 1: sc_c, sc_bg = '#10b981', 'rgba(16,185,129,0.12)'
+        else: sc_c, sc_bg = '#94a3b8', 'rgba(148,163,184,0.08)'
+
+        # MA 位置颜色
+        ma_c = '#ef4444' if '多头' in ma_pos else ('#10b981' if '空头' in ma_pos else '#f59e0b')
+
+        # MACD 颜色
+        macd_c = '#ef4444' if '红' in macd_dir else ('#10b981' if '绿' in macd_dir else '#94a3b8')
+
+        # 买卖信号
         buy_color = "#10b981" if "可" in signals['buy'] or "建议" in signals['buy'] else (
             "#f59e0b" if "关注" in signals['buy'] or "向好" in signals['buy'] else "#64748b")
         sell_color = "#ef4444" if "止损" in signals['sell'] or "减仓" in signals['sell'] else (
             "#f59e0b" if "关注" in signals['sell'] or "风险" in signals['sell'] else "#64748b")
-        action_color = {"买入": "#ef4444", "卖出": "#10b981", "持有": "#3b82f6", "观望": "#64748b"}.get(
-            signals['action_short'], '#94a3b8')
 
-        sig_html = (
-            f'<span class="sr-sig" style="color:{status_color};">{signals["status"]}</span>'
-            f'<span class="sr-sig" style="color:{buy_color};">买:{signals["buy"]}</span>'
-            f'<span class="sr-sig" style="color:{sell_color};">卖:{signals["sell"]}</span>'
-            f'<span class="sr-sig" style="color:{action_color};">{signals["action"]}</span>'
-        )
+        pill = ('<span style="font-size:0.7rem;padding:1px 6px;border-radius:4px;'
+               'white-space:nowrap;background:{bg};color:{c};">{txt}</span>')
+
+        metrics_html = ('<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px;">'
+            + pill.format(bg=sc_bg, c=sc_c, txt=f'评分 {score}/5')
+            + pill.format(bg=rsi_bg, c=rsi_c, txt=f'RSI {rsi:.0f}')
+            + pill.format(bg=vr_bg, c=vr_c, txt=f'量比 {vol_ratio:.1f}')
+            + pill.format(bg='rgba(148,163,184,0.08)', c=ma_c, txt=f'均线 {ma_pos}')
+            + pill.format(bg='rgba(148,163,184,0.08)', c=macd_c, txt=f'MACD {macd_dir}')
+            + pill.format(bg='rgba(148,163,184,0.08)', c=buy_color, txt=f'买 {signals["buy"]}')
+            + pill.format(bg='rgba(148,163,184,0.08)', c=sell_color, txt=f'卖 {signals["sell"]}')
+            + '</div>')
 
     extra_html = f'<span class="sr-extra">{extra}</span>' if extra else ''
     price_str = f"¥{price:.2f}" if price > 0 else "--"
 
-    # 行 HTML + 按钮列
+    # 卡片 HTML + 按钮列
     row_col, btn_col = st.columns([7, 1])
     with row_col:
         delay = f"{rank * 0.02 if rank else 0}s"
-        html = (f'<div class="stock-row" style="animation:fadeInUp 0.25s ease-out backwards;animation-delay:{delay};">'
+        html = (f'<div class="stock-row" style="animation:fadeInUp 0.25s ease-out backwards;'
+                f'animation-delay:{delay};flex-direction:column;align-items:stretch;">'
+                f'<div style="display:flex;align-items:center;gap:8px;">'
                 f'{rank_html}'
                 f'<span class="sr-name">{stock_name}</span>'
                 f'<span class="sr-code">{code} {in_wl}</span>'
                 f'{extra_html}'
                 f'<span class="sr-price">{price_str}</span>'
                 f'<span class="sr-change" style="color:{chg_color};">{chg_icon}{abs(change):.2f}%</span>'
-                f'{sig_html}'
+                f'{action_badge}'
+                f'</div>'
+                f'{metrics_html}'
                 f'</div>')
         st.markdown(html, unsafe_allow_html=True)
 
@@ -412,7 +476,7 @@ def _render_stock_list(df, my_stocks, name_map):
 #  视图 2: 决策分析
 # ============================================================
 def _render_analyze_view(L, my_stocks, name_map):
-    """决策分析视图 — 前后切换 + 加自选"""
+    """决策分析视图 — 紧凑导航"""
     from components.dna_analyzer import render_dna_analyzer
 
     current = st.session_state.get('selected_stock', '601318')
@@ -420,49 +484,51 @@ def _render_analyze_view(L, my_stocks, name_map):
     strat_list = st.session_state.get('_strat_list', [])
     in_watchlist = current in my_stocks
 
-    # ---- 头部: 标的信息 + 操作 ----
-    top1, top2, top3 = st.columns([4, 1, 2])
-
-    with top1:
-        status_badge = '⭐ 已自选' if in_watchlist else ''
-        hdr = (f'<div style="display:flex;align-items:center;gap:10px;padding:4px 0;">'
-               f'<span style="font-size:1.15rem;font-weight:700;color:#f1f5f9;">🎯 {cur_name}</span>'
-               f'<span style="color:#64748b;font-size:0.85rem;">{current}</span>'
-               f'<span style="color:#f59e0b;font-size:0.78rem;background:rgba(245,158,11,0.1);'
-               f'padding:1px 8px;border-radius:12px;">{status_badge}</span>'
-               f'</div>')
-        st.markdown(hdr, unsafe_allow_html=True)
-
-    with top2:
-        if not in_watchlist:
-            if st.button("📥 加自选", key="add_wl", type="primary", use_container_width=True):
-                my_stocks.append(current)
-                save_watchlist(my_stocks)
-                st.toast(f"✅ {cur_name} 已加入自选", icon="⭐")
-                st.rerun()
-        else:
-            if st.button("❌ 移出", key="rm_wl", use_container_width=True):
-                my_stocks.remove(current)
-                save_watchlist(my_stocks)
-                st.toast(f"{cur_name} 已移出自选", icon="🗑️")
-                st.rerun()
-
-    with top3:
-        if strat_list and current in strat_list:
-            cur_idx = strat_list.index(current)
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                if cur_idx > 0:
-                    if st.button("◀", key="prev_stock", use_container_width=True, help="上一只"):
-                        st.session_state['selected_stock'] = strat_list[cur_idx - 1]
-                        st.rerun()
-            with c2:
-                st.caption(f"{cur_idx + 1}/{len(strat_list)}")
-            with c3:
-                if cur_idx < len(strat_list) - 1:
-                    if st.button("▶", key="next_stock", use_container_width=True, help="下一只"):
-                        st.session_state['selected_stock'] = strat_list[cur_idx + 1]
-                        st.rerun()
+    # ---- 紧凑操作栏: ◀ | 进度 | 加/移自选 | ▶ ----
+    if strat_list and current in strat_list:
+        cur_idx = strat_list.index(current)
+        c1, c2, c3, c4 = st.columns([1, 2, 2, 1])
+        with c1:
+            if cur_idx > 0:
+                if st.button("◀ 上一只", key="prev_stock", use_container_width=True):
+                    st.session_state['selected_stock'] = strat_list[cur_idx - 1]
+                    st.rerun()
+        with c2:
+            st.caption(f"🎯 {cur_name} ({current}) — {cur_idx + 1}/{len(strat_list)}")
+        with c3:
+            if not in_watchlist:
+                if st.button("⭐ 加自选", key="add_wl", type="primary", use_container_width=True):
+                    my_stocks.append(current)
+                    save_watchlist(my_stocks)
+                    st.toast(f"✅ {cur_name} 已加入自选", icon="⭐")
+                    st.rerun()
+            else:
+                if st.button("❌ 移出自选", key="rm_wl", use_container_width=True):
+                    my_stocks.remove(current)
+                    save_watchlist(my_stocks)
+                    st.toast(f"{cur_name} 已移出自选", icon="🗑️")
+                    st.rerun()
+        with c4:
+            if cur_idx < len(strat_list) - 1:
+                if st.button("下一只 ▶", key="next_stock", use_container_width=True):
+                    st.session_state['selected_stock'] = strat_list[cur_idx + 1]
+                    st.rerun()
+    else:
+        # 无策略列表时只显示自选操作
+        _, wl_col, _ = st.columns([3, 2, 3])
+        with wl_col:
+            if not in_watchlist:
+                if st.button("⭐ 加自选", key="add_wl", type="primary", use_container_width=True):
+                    my_stocks.append(current)
+                    save_watchlist(my_stocks)
+                    st.toast(f"✅ {cur_name} 已加入自选", icon="⭐")
+                    st.rerun()
+            else:
+                if st.button("❌ 移出自选", key="rm_wl", use_container_width=True):
+                    my_stocks.remove(current)
+                    save_watchlist(my_stocks)
+                    st.toast(f"{cur_name} 已移出自选", icon="🗑️")
+                    st.rerun()
 
     render_dna_analyzer(L, my_stocks, name_map)
 
@@ -577,7 +643,7 @@ def _render_track_view(L, my_stocks, name_map):
 # ============================================================
 #  技术信号计算
 # ============================================================
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)
 def _get_quick_signals(code: str) -> dict:
     """
     轻量级技术信号 (缓存 2min)
@@ -585,7 +651,8 @@ def _get_quick_signals(code: str) -> dict:
     返回: {status, buy, sell, action, action_short}
     """
     import numpy as np
-    default = {'status': '—', 'buy': '—', 'sell': '—', 'action': '—', 'action_short': '观望'}
+    default = {'status': '—', 'buy': '—', 'sell': '—', 'action': '—', 'action_short': '观望',
+                'rsi': 50, 'vol_ratio': 1.0, 'score': 0, 'ma_pos': '—', 'macd_dir': '—'}
     try:
         from modules.data_loader import fetch_kline
         full = ("sh" if code.startswith('6') else "sz") + code
@@ -704,6 +771,36 @@ def _get_quick_signals(code: str) -> dict:
             action = "🟡 震荡等待"
             action_short = "观望"
 
-        return {'status': status, 'buy': buy, 'sell': sell, 'action': action, 'action_short': action_short}
+        # 均线位置
+        if ma5 > ma10 > ma20:
+            ma_pos = '多头排列'
+        elif ma5 < ma10 < ma20:
+            ma_pos = '空头排列'
+        elif close > ma20:
+            ma_pos = '站上MA20'
+        else:
+            ma_pos = '跌破MA20'
+
+        # MACD 方向
+        if macd_hist > 0 and macd_hist > prev_macd_hist:
+            macd_dir = '红柱增'
+        elif macd_hist > 0:
+            macd_dir = '红柱缩'
+        elif macd_hist < 0 and macd_hist < prev_macd_hist:
+            macd_dir = '绿柱增'
+        elif macd_hist < 0:
+            macd_dir = '绿柱缩'
+        else:
+            macd_dir = '零轴'
+
+        # 量比
+        vol_ratio = round(vol / vol_avg5, 2) if vol_avg5 > 0 else 1.0
+
+        return {
+            'status': status, 'buy': buy, 'sell': sell,
+            'action': action, 'action_short': action_short,
+            'rsi': rsi, 'vol_ratio': vol_ratio, 'score': score,
+            'ma_pos': ma_pos, 'macd_dir': macd_dir,
+        }
     except Exception:
         return default

@@ -534,9 +534,9 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
     f_data = get_financial_health_score(sel_stock) if get_financial_health_score else None
     q_metrics = calculate_metrics(kline) if calculate_metrics else {}
 
-    # ========== 六大 Tab ==========
-    tab_chart, tab_tech, tab_fund, tab_dragon, tab_ai, tab_profile = st.tabs(
-        ["📊 走势", "🔬 技术", "💰 资金", "🐉 龙虎", "🤖 AI", "🏢 简介"])
+    # ========== 七大 Tab ==========
+    tab_chart, tab_tech, tab_fund, tab_dragon, tab_finance, tab_ai, tab_profile = st.tabs(
+        ["📊 走势", "🔬 技术", "💰 资金", "🐉 龙虎", "📈 财务", "🤖 AI", "🏢 简介"])
 
     # -------- Tab 1: 行情走势 --------
     with tab_chart:
@@ -681,7 +681,7 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
     with tab_fund:
         st.caption(f"💰 {name_map.get(sel_stock, sel_stock)} 资金面分析 | 数据来源: Tushare Pro")
         try:
-            from core.tushare_client import get_ts_client
+            from core.tushare_client import get_ts_client, cached_moneyflow_single, cached_margin, cached_holder_number
             ts = get_ts_client()
             if not ts.available:
                 st.warning("Tushare 未连接，资金面数据不可用")
@@ -691,7 +691,7 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
                 # 个股资金流向
                 with fund_c1:
                     st.markdown("##### 📊 资金流向 (近 20 日)")
-                    mf = ts.get_moneyflow_single(sel_stock, days=20)
+                    mf = cached_moneyflow_single(sel_stock, days=20)
                     if mf is not None and not mf.empty:
                         fig_mf = go.Figure()
                         dates = mf['trade_date'].astype(str)
@@ -730,7 +730,7 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
                 # 融资融券
                 with fund_c2:
                     st.markdown("##### 📈 融资融券余额 (近 30 日)")
-                    mg = ts.get_margin(sel_stock, days=30)
+                    mg = cached_margin(sel_stock, days=30)
                     if mg is not None and not mg.empty:
                         fig_mg = go.Figure()
                         dates_mg = mg['trade_date'].astype(str)
@@ -774,7 +774,7 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
                 # 股东人数变化
                 st.divider()
                 st.markdown("##### 👥 股东人数变化")
-                hn = ts.get_holder_number(sel_stock)
+                hn = cached_holder_number(sel_stock)
                 if hn is not None and not hn.empty:
                     fig_hn = go.Figure()
                     hn_sorted = hn.sort_values('end_date')
@@ -805,7 +805,7 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
     with tab_dragon:
         st.caption(f"🐉 {name_map.get(sel_stock, sel_stock)} 龙虎榜 & 大宗交易 | 数据来源: Tushare Pro")
         try:
-            from core.tushare_client import get_ts_client
+            from core.tushare_client import get_ts_client, cached_holder_trade
             ts = get_ts_client()
             if not ts.available:
                 st.warning("Tushare 未连接，龙虎榜数据不可用")
@@ -908,7 +908,7 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
                 # 股东增减持
                 st.divider()
                 st.markdown("##### 📢 股东增减持")
-                ht = ts.get_holder_trade(sel_stock)
+                ht = cached_holder_trade(sel_stock)
                 if ht is not None and not ht.empty:
                     ht_cols = []
                     ht_rename = {}
@@ -939,13 +939,13 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
         stock_name_display = name_map.get(sel_stock, sel_stock)
         st.caption(f"🏢 {stock_name_display} 公司简介 | 数据来源: Tushare Pro")
         try:
-            from core.tushare_client import get_ts_client
+            from core.tushare_client import get_ts_client, cached_stock_company
             ts = get_ts_client()
             if not ts.available:
                 st.warning("Tushare 未连接，公司简介不可用")
             else:
                 # 公司详细信息
-                company = ts.get_stock_company(sel_stock)
+                company = cached_stock_company(sel_stock)
                 # 基础信息 (行业/地区/上市日期)
                 basics = ts.get_stock_basic()
                 basic_info = {}
@@ -1074,3 +1074,286 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
                     st.info("暂无公司简介数据")
         except Exception as e:
             st.error(f"公司简介加载失败: {e}")
+
+    # -------- Tab 5: 财务基本面 --------
+    with tab_finance:
+        stock_name_fin = name_map.get(sel_stock, sel_stock)
+        st.caption(f"📈 {stock_name_fin} 财务基本面分析 | 数据来源: Tushare Pro")
+        try:
+            from core.tushare_client import (get_ts_client, cached_fina_indicator,
+                cached_income, cached_balancesheet, cached_forecast)
+            ts = get_ts_client()
+            if not ts.available:
+                st.warning("Tushare 未连接，财务数据不可用")
+            else:
+                fin_c1, fin_c2 = st.columns(2)
+
+                # ====== 左列: 财务指标 + 利润表 ======
+                with fin_c1:
+                    # -- 核心财务指标 --
+                    st.markdown("##### 📋 核心财务指标 (最近 4 期)")
+                    fina = cached_fina_indicator(sel_stock)
+                    if fina is not None and not fina.empty:
+                        # 最新一期指标卡片
+                        latest = fina.iloc[0]
+                        end_date = str(latest.get('end_date', ''))
+                        if len(end_date) == 8:
+                            end_date = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:]}"
+
+                        def _safe_float(v):
+                            try:
+                                return float(v or 0)
+                            except (ValueError, TypeError):
+                                return 0.0
+
+                        roe = _safe_float(latest.get('roe', 0))
+                        eps = _safe_float(latest.get('eps', 0))
+                        roa = _safe_float(latest.get('roa', 0))
+                        debt = _safe_float(latest.get('debt_to_assets', 0))
+                        gross_margin = _safe_float(latest.get('grossprofit_margin', 0))
+                        np_yoy = _safe_float(latest.get('netprofit_yoy', 0))
+                        rev_yoy = _safe_float(latest.get('or_yoy', 0))
+
+                        # 健康评级
+                        def _health(val, good, warn):
+                            if val >= good:
+                                return '#10b981', '优'
+                            elif val >= warn:
+                                return '#f59e0b', '中'
+                            else:
+                                return '#ef4444', '弱'
+
+                        indicators = [
+                            ('ROE (%)', f'{roe:.2f}', *_health(roe, 15, 8)),
+                            ('EPS (元)', f'{eps:.2f}', '#e2e8f0', ''),
+                            ('ROA (%)', f'{roa:.2f}', *_health(roa, 8, 3)),
+                            ('资产负债率', f'{debt:.1f}%', *_health(100-debt, 50, 30)),
+                            ('毛利率', f'{gross_margin:.1f}%', *_health(gross_margin, 40, 20)),
+                            ('净利润增长', f'{np_yoy:+.1f}%', *_health(np_yoy, 20, 0)),
+                            ('营收增长', f'{rev_yoy:+.1f}%', *_health(rev_yoy, 15, 0)),
+                        ]
+
+                        cards_html = ''.join(
+                            f'<div style="display:flex;justify-content:space-between;padding:5px 0;'
+                            f'border-bottom:1px solid rgba(255,255,255,0.04);font-size:0.84rem;">'
+                            f'<span style="color:#94a3b8;">{label}</span>'
+                            f'<span style="color:{color};font-weight:600;">{val}'
+                            f'{" " + tag if tag else ""}</span></div>'
+                            for label, val, color, tag in indicators
+                        )
+
+                        st.markdown(
+                            f'<div class="ssm-card">'
+                            f'<div style="font-size:0.78rem;color:#64748b;margin-bottom:8px;">'
+                            f'报告期: {end_date}</div>'
+                            f'{cards_html}</div>',
+                            unsafe_allow_html=True
+                        )
+
+                        # 趋势表 (4 期)
+                        with st.expander("📊 近 4 期财务指标趋势"):
+                            display_cols = []
+                            col_rename = {}
+                            for orig, disp in [
+                                ('end_date', '报告期'), ('roe', 'ROE%'),
+                                ('eps', 'EPS'), ('roa', 'ROA%'),
+                                ('debt_to_assets', '负债率%'),
+                                ('grossprofit_margin', '毛利率%'),
+                                ('netprofit_yoy', '净利增长%'),
+                                ('or_yoy', '营收增长%'),
+                            ]:
+                                if orig in fina.columns:
+                                    display_cols.append(orig)
+                                    col_rename[orig] = disp
+                            show_fina = fina[display_cols].rename(columns=col_rename)
+                            if '报告期' in show_fina.columns:
+                                show_fina['报告期'] = show_fina['报告期'].astype(str).apply(
+                                    lambda x: f"{x[:4]}-{x[4:6]}" if len(x) == 8 else x)
+                            st.dataframe(show_fina, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("暂无财务指标数据")
+
+                    # -- 利润表 --
+                    st.markdown("##### 💰 营收 & 利润 趋势")
+                    income = cached_income(sel_stock)
+                    if income is not None and not income.empty:
+                        inc_sorted = income.sort_values('end_date')
+                        fig_inc = go.Figure()
+                        dates_inc = inc_sorted['end_date'].astype(str).apply(
+                            lambda x: f"{x[:4]}-{x[4:6]}" if len(x) == 8 else x)
+
+                        if 'revenue' in inc_sorted.columns:
+                            rev = inc_sorted['revenue'].astype(float) / 1e8
+                            fig_inc.add_trace(go.Bar(
+                                x=dates_inc, y=rev, name='营业收入(亿)',
+                                marker_color='#3b82f6', opacity=0.7
+                            ))
+                        if 'n_income' in inc_sorted.columns:
+                            ni = inc_sorted['n_income'].astype(float) / 1e8
+                            fig_inc.add_trace(go.Scatter(
+                                x=dates_inc, y=ni, name='净利润(亿)',
+                                line=dict(color='#10b981', width=2.5),
+                                mode='lines+markers', marker=dict(size=8)
+                            ))
+                        if 'operate_profit' in inc_sorted.columns:
+                            op = inc_sorted['operate_profit'].astype(float) / 1e8
+                            fig_inc.add_trace(go.Scatter(
+                                x=dates_inc, y=op, name='营业利润(亿)',
+                                line=dict(color='#f59e0b', width=2, dash='dot'),
+                                mode='lines+markers', marker=dict(size=6)
+                            ))
+
+                        fig_inc.update_layout(
+                            template='plotly_dark', height=300,
+                            margin=dict(l=10, r=10, t=30, b=30),
+                            legend=dict(orientation='h', y=1.05),
+                            yaxis_title='金额(亿元)'
+                        )
+                        st.plotly_chart(fig_inc, use_container_width=True, key=f"inc_{sel_stock}")
+                    else:
+                        st.info("暂无利润表数据")
+
+                # ====== 右列: 资产负债表 + 业绩预告 ======
+                with fin_c2:
+                    # -- 资产负债表 --
+                    st.markdown("##### 🏦 资产结构")
+                    bs = cached_balancesheet(sel_stock)
+                    if bs is not None and not bs.empty:
+                        bs_sorted = bs.sort_values('end_date')
+                        fig_bs = go.Figure()
+                        dates_bs = bs_sorted['end_date'].astype(str).apply(
+                            lambda x: f"{x[:4]}-{x[4:6]}" if len(x) == 8 else x)
+
+                        if 'total_assets' in bs_sorted.columns:
+                            ta = bs_sorted['total_assets'].astype(float) / 1e8
+                            fig_bs.add_trace(go.Bar(
+                                x=dates_bs, y=ta, name='总资产(亿)',
+                                marker_color='#3b82f6', opacity=0.7
+                            ))
+                        if 'total_liab' in bs_sorted.columns:
+                            tl = bs_sorted['total_liab'].astype(float) / 1e8
+                            fig_bs.add_trace(go.Bar(
+                                x=dates_bs, y=tl, name='总负债(亿)',
+                                marker_color='#ef4444', opacity=0.6
+                            ))
+                        if 'total_hldr_eqy_exc_min_int' in bs_sorted.columns:
+                            eq = bs_sorted['total_hldr_eqy_exc_min_int'].astype(float) / 1e8
+                            fig_bs.add_trace(go.Scatter(
+                                x=dates_bs, y=eq, name='净资产(亿)',
+                                line=dict(color='#10b981', width=2.5),
+                                mode='lines+markers', marker=dict(size=8)
+                            ))
+
+                        fig_bs.update_layout(
+                            barmode='group', template='plotly_dark', height=300,
+                            margin=dict(l=10, r=10, t=30, b=30),
+                            legend=dict(orientation='h', y=1.05),
+                            yaxis_title='金额(亿元)'
+                        )
+                        st.plotly_chart(fig_bs, use_container_width=True, key=f"bs_{sel_stock}")
+
+                        # 最新一期指标卡
+                        latest_bs = bs_sorted.iloc[-1]
+                        def _sf(v):
+                            try:
+                                return float(v or 0)
+                            except (ValueError, TypeError):
+                                return 0.0
+                        ta_v = _sf(latest_bs.get('total_assets', 0)) / 1e8
+                        tl_v = _sf(latest_bs.get('total_liab', 0)) / 1e8
+                        eq_v = _sf(latest_bs.get('total_hldr_eqy_exc_min_int', 0)) / 1e8
+                        cash_v = _sf(latest_bs.get('money_cap', 0)) / 1e8
+                        debt_ratio = (tl_v / ta_v * 100) if ta_v > 0 else 0
+
+                        bs_items = [
+                            ('总资产', f'{ta_v:.2f}亿'),
+                            ('总负债', f'{tl_v:.2f}亿'),
+                            ('净资产', f'{eq_v:.2f}亿'),
+                            ('货币资金', f'{cash_v:.2f}亿'),
+                            ('资产负债率', f'{debt_ratio:.1f}%'),
+                        ]
+                        bs_html = ''.join(
+                            f'<div style="display:flex;justify-content:space-between;padding:4px 0;'
+                            f'border-bottom:1px solid rgba(255,255,255,0.04);font-size:0.82rem;">'
+                            f'<span style="color:#94a3b8;">{label}</span>'
+                            f'<span style="color:#e2e8f0;font-weight:500;">{val}</span></div>'
+                            for label, val in bs_items
+                        )
+                        st.markdown(f'<div class="ssm-card">{bs_html}</div>', unsafe_allow_html=True)
+                    else:
+                        st.info("暂无资产负债表数据")
+
+                    # -- 业绩预告 --
+                    st.markdown("##### 📢 业绩预告")
+                    fc = cached_forecast(sel_stock)
+                    if fc is not None and not fc.empty:
+                        fc_cols = []
+                        fc_rename = {}
+                        for orig, disp in [
+                            ('ann_date', '公告日'), ('end_date', '报告期'),
+                            ('type', '类型'), ('p_change_min', '预计增幅下限%'),
+                            ('p_change_max', '预计增幅上限%'), ('net_profit_min', '预计净利下限(万)'),
+                            ('net_profit_max', '预计净利上限(万)'), ('summary', '摘要'),
+                        ]:
+                            if orig in fc.columns:
+                                fc_cols.append(orig)
+                                fc_rename[orig] = disp
+                        show_fc = fc[fc_cols].rename(columns=fc_rename) if fc_cols else fc
+                        # 格式化日期
+                        for dc in ['公告日', '报告期']:
+                            if dc in show_fc.columns:
+                                show_fc[dc] = show_fc[dc].astype(str).apply(
+                                    lambda x: f"{x[:4]}-{x[4:6]}-{x[6:]}" if len(x) == 8 else x)
+                        # 格式化净利
+                        for nc in ['预计净利下限(万)', '预计净利上限(万)']:
+                            if nc in show_fc.columns:
+                                show_fc[nc] = show_fc[nc].apply(
+                                    lambda x: f"{float(x or 0)/10000:.0f}" if x else '—')
+                        st.dataframe(show_fc.head(5), use_container_width=True, hide_index=True)
+                    else:
+                        st.info("暂无业绩预告")
+
+                # ====== 财务健康度雷达图 ======
+                if fina is not None and not fina.empty:
+                    st.divider()
+                    st.markdown("##### 🎯 财务健康度雷达")
+                    latest = fina.iloc[0]
+                    def _sf2(v):
+                        try:
+                            return float(v or 0)
+                        except (ValueError, TypeError):
+                            return 0.0
+
+                    roe_s = min(_sf2(latest.get('roe', 0)) / 25 * 100, 100)
+                    gm_s = min(_sf2(latest.get('grossprofit_margin', 0)) / 60 * 100, 100)
+                    debt_s = max(100 - _sf2(latest.get('debt_to_assets', 0)), 0)
+                    np_s = min(max(_sf2(latest.get('netprofit_yoy', 0)) + 50, 0), 100)
+                    rev_s = min(max(_sf2(latest.get('or_yoy', 0)) + 50, 0), 100)
+
+                    categories = ['盈利能力(ROE)', '毛利水平', '债务安全', '利润增长', '营收增长']
+                    values = [roe_s, gm_s, debt_s, np_s, rev_s]
+
+                    fig_radar = go.Figure(data=go.Scatterpolar(
+                        r=values + [values[0]],
+                        theta=categories + [categories[0]],
+                        fill='toself',
+                        fillcolor='rgba(59,130,246,0.15)',
+                        line=dict(color='#3b82f6', width=2),
+                        marker=dict(size=6, color='#60a5fa')
+                    ))
+                    fig_radar.update_layout(
+                        polar=dict(
+                            bgcolor='rgba(15,23,42,0.5)',
+                            radialaxis=dict(visible=True, range=[0, 100],
+                                          gridcolor='rgba(255,255,255,0.05)',
+                                          tickfont=dict(size=9, color='#64748b')),
+                            angularaxis=dict(gridcolor='rgba(255,255,255,0.08)',
+                                           tickfont=dict(size=11, color='#94a3b8'))
+                        ),
+                        template='plotly_dark', height=350,
+                        margin=dict(l=60, r=60, t=30, b=30),
+                        showlegend=False
+                    )
+                    st.plotly_chart(fig_radar, use_container_width=True, key=f"radar_{sel_stock}")
+        except Exception as e:
+            st.error(f"财务数据加载失败: {e}")

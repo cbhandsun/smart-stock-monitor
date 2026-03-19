@@ -583,3 +583,57 @@ def get_ts_client() -> TushareClient:
         _client = TushareClient()
     return _client
 
+
+# ============================================================
+#  缓存包装器 — st.cache_data 加速 (避免重复 API 请求)
+# ============================================================
+try:
+    import streamlit as st
+
+    @st.cache_data(ttl=14400, show_spinner=False)  # 4h — 财报季度更新
+    def cached_fina_indicator(symbol: str):
+        return get_ts_client().get_fina_indicator(symbol)
+
+    @st.cache_data(ttl=14400, show_spinner=False)
+    def cached_income(symbol: str):
+        return get_ts_client().get_income(symbol)
+
+    @st.cache_data(ttl=14400, show_spinner=False)
+    def cached_balancesheet(symbol: str):
+        return get_ts_client().get_balancesheet(symbol)
+
+    @st.cache_data(ttl=14400, show_spinner=False)
+    def cached_forecast(symbol: str):
+        return get_ts_client().get_forecast(symbol)
+
+    @st.cache_data(ttl=86400, show_spinner=False)  # 24h — 公司简介极少变
+    def cached_stock_company(symbol: str):
+        return get_ts_client().get_stock_company(symbol)
+
+    @st.cache_data(ttl=600, show_spinner=False)  # 10min — 资金流盘中变化
+    def cached_moneyflow_single(symbol: str, days: int = 20):
+        return get_ts_client().get_moneyflow_single(symbol, days)
+
+    @st.cache_data(ttl=600, show_spinner=False)
+    def cached_margin(symbol: str, days: int = 30):
+        return get_ts_client().get_margin(symbol, days)
+
+    @st.cache_data(ttl=3600, show_spinner=False)  # 1h — 股东数据日更
+    def cached_holder_number(symbol: str):
+        return get_ts_client().get_holder_number(symbol)
+
+    @st.cache_data(ttl=3600, show_spinner=False)
+    def cached_holder_trade(symbol: str):
+        return get_ts_client().get_holder_trade(symbol)
+
+except ImportError:
+    # 非 Streamlit 环境 (测试 / 脚本) — 无缓存直通
+    def cached_fina_indicator(symbol): return get_ts_client().get_fina_indicator(symbol)
+    def cached_income(symbol): return get_ts_client().get_income(symbol)
+    def cached_balancesheet(symbol): return get_ts_client().get_balancesheet(symbol)
+    def cached_forecast(symbol): return get_ts_client().get_forecast(symbol)
+    def cached_stock_company(symbol): return get_ts_client().get_stock_company(symbol)
+    def cached_moneyflow_single(symbol, days=20): return get_ts_client().get_moneyflow_single(symbol, days)
+    def cached_margin(symbol, days=30): return get_ts_client().get_margin(symbol, days)
+    def cached_holder_number(symbol): return get_ts_client().get_holder_number(symbol)
+    def cached_holder_trade(symbol): return get_ts_client().get_holder_trade(symbol)

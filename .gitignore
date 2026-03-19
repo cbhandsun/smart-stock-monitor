@@ -6,6 +6,9 @@ venv/
 .ipynb_checkpoints/
 .streamlit/
 
+# Installed packages
+packages/
+
 # Runtime data
 data/cache/
 data/reports/

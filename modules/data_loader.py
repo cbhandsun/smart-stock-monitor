@@ -5,6 +5,11 @@ import os
 import time
 import concurrent.futures
 
+try:
+    import streamlit as _st
+except ImportError:
+    _st = None
+
 CACHE_DIR = "data/cache"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
@@ -20,10 +25,10 @@ except Exception:
 def _get_cache_path(symbol, period):
     return os.path.join(CACHE_DIR, f"kline_{symbol}_{period}.pkl")
 
-def _load_from_cache(symbol, period, ttl_seconds=300):
+def _load_from_cache(symbol, period, ttl_seconds=600):
     cache_path = _get_cache_path(symbol, period)
     if os.path.exists(cache_path):
-        # 如果缓存未过期 (默认5分钟)
+        # 如果缓存未过期 (默认10分钟)
         if time.time() - os.path.getmtime(cache_path) < ttl_seconds:
             try:
                 return pd.read_pickle(cache_path)
@@ -56,7 +61,7 @@ TIME_PERIOD_MAP = {
 }
 
 
-def fetch_kline(symbol, period='daily', datalen=100):
+def _fetch_kline_impl(symbol, period='daily', datalen=100):
     """
     获取K线数据 — 多层缓存 + 多数据源
     优先级: Redis → Tushare+PG → Sina (fallback)
@@ -135,6 +140,21 @@ def fetch_kline(symbol, period='daily', datalen=100):
     except Exception as e:
         print(f"Sina KLine fetch error for {symbol}: {e}")
         return pd.DataFrame()
+
+
+def fetch_kline(symbol, period='daily', datalen=100):
+    """缓存包装器 — 优先 st.cache_data (10min TTL)"""
+    if _st is not None and hasattr(_st, 'cache_data'):
+        return _cached_fetch_kline(symbol, period, datalen)
+    return _fetch_kline_impl(symbol, period, datalen)
+
+
+if _st is not None and hasattr(_st, 'cache_data'):
+    @_st.cache_data(ttl=600, show_spinner=False)
+    def _cached_fetch_kline(symbol, period='daily', datalen=100):
+        return _fetch_kline_impl(symbol, period, datalen)
+else:
+    _cached_fetch_kline = _fetch_kline_impl
 
 
 def fetch_kline_weekly_monthly(symbol, period='weekly', datalen=100):
