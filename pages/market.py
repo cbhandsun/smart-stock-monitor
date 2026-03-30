@@ -14,61 +14,54 @@ from pages import load_watchlist, save_watchlist
 from components.ui_components import stock_selector
 
 
-# ============================================================
-#  页面入口
-# ============================================================
 def render(L, my_stocks, name_map):
-    """渲染市场页面"""
-
-    # 首次加载(全新会话)默认选股; 页面内切换靠按钮管理 market_view
-    if 'market_view' not in st.session_state:
-        st.session_state['market_view'] = 'strategy'
-
-    current_view = st.session_state['market_view']
-
-    # ========== 紧凑头部: 标题 | 导航 | 搜索 | 刷新 ==========
-    h1, h2, h3, h4, h5, h6 = st.columns([2.5, 1, 1, 1, 3, 0.5])
-    with h1:
-        st.markdown(f"### 📡 {L.get('market_discovery', '实时信号流')}")
-    with h2:
-        if st.button("📋选股", use_container_width=True,
-                     type="primary" if current_view == 'strategy' else "secondary",
-                     key="nav_strategy"):
-            st.session_state['market_view'] = 'strategy'
-            st.rerun()
-    with h3:
-        if st.button("📊分析", use_container_width=True,
-                     type="primary" if current_view == 'analyze' else "secondary",
-                     key="nav_analyze"):
-            st.session_state['market_view'] = 'analyze'
-            st.rerun()
-    with h4:
-        if st.button("⭐跟盘", use_container_width=True,
-                     type="primary" if current_view == 'track' else "secondary",
-                     key="nav_track"):
-            st.session_state['market_view'] = 'track'
-            st.rerun()
-    with h5:
-        code = stock_selector(label="快速跳转", key_suffix="market_search")
-        if code and code != st.session_state.get('_last_market_search', ''):
-            st.session_state['_last_market_search'] = code
-            st.session_state['selected_stock'] = code
-            st.session_state['market_view'] = 'analyze'
-            st.rerun()
-    with h6:
-        if st.button("🔄", key="refresh_market", use_container_width=True, help="刷新行情"):
-            st.cache_data.clear()
-            st.toast("行情已刷新", icon="📈")
-            st.rerun()
-
-    # ========== 大盘指数: 内联紧凑条 ==========
+    """渲染市场页面 - 统一路由版本"""
+    
+    # 1. 顶部大盘指数 (Sticky/Unified)
     _render_market_bar()
+    
+    # 2. 导航路由 (State-Aware Router)
+    if 'market_view' not in st.session_state:
+        st.session_state['market_view'] = '📋 策略选股'
+        
+    views = ['📋 策略选股', '📊 深度分析', '⭐ 自选跟盘']
+    
+    # 将内部状态映射到显示名 (用于 backwards compatibility)
+    view_map_rev = {
+        'strategy': '📋 策略选股',
+        'analyze': '📊 深度分析',
+        'track': '⭐ 自选跟盘'
+    }
+    # 检查 session_state 是否有旧的状态值并转换
+    current_view = st.session_state.get('market_view', 'strategy')
+    if current_view in view_map_rev:
+        current_view = view_map_rev[current_view]
 
-    if current_view == 'strategy':
+    # 渲染导航 Pills
+    col_nav, col_empty = st.columns([3, 1])
+    with col_nav:
+        selected_view = st.segmented_control(
+            "视图导航", 
+            options=views, 
+            default=current_view,
+            label_visibility="collapsed",
+            key="market_view_router"
+        )
+    
+    # 同步状态
+    if selected_view:
+        st.session_state['market_view'] = selected_view
+    
+    st.markdown("---")
+
+    # 3. 页面路由分发
+    active_view = st.session_state['market_view']
+    
+    if active_view == '📋 策略选股' or active_view == 'strategy':
         _render_strategy_view(L, my_stocks, name_map)
-    elif current_view == 'analyze':
+    elif active_view == '📊 深度分析' or active_view == 'analyze':
         _render_analyze_view(L, my_stocks, name_map)
-    elif current_view == 'track':
+    elif active_view == '⭐ 自选跟盘' or active_view == 'track':
         _render_track_view(L, my_stocks, name_map)
 
 
@@ -108,138 +101,144 @@ def _render_market_bar():
 # ============================================================
 #  统一股票行渲染器
 # ============================================================
-def _render_stock_row(code, stock_name, price, change, rank=0, extra="",
-                      my_stocks=None, name_map=None, show_signals=True,
-                      btn_prefix="s", show_watchlist_btn=True, show_remove_btn=False):
-    """紧凑双行卡片 — 通用组件，选股/跟盘共用"""
-    if my_stocks is None:
-        my_stocks = []
+# ============================================================
+#  统一股票卡片渲染器 (Stock Grid Card)
+# ============================================================
+def _render_stock_card(code, stock_name, price, change, rank=0, extra="",
+                       sector="概念挖掘", my_stocks=None, name_map=None, show_signals=True,
+                       btn_prefix="s", show_watchlist_btn=True, show_remove_btn=False,
+                       precomputed_signals=None):
+    """三列网格化卡片 — 极简机构版重构"""
+    if my_stocks is None: my_stocks = []
 
-    chg_color = "#ef4444" if change >= 0 else "#10b981"
+    chg_color = "var(--up-color)" if change >= 0 else "var(--down-color)"
     chg_icon = "▲" if change >= 0 else "▼"
     in_wl = "⭐" if code in my_stocks else ""
 
-    # 排名徽章
-    if rank > 0:
-        if rank <= 3:
-            badge_bg, badge_color = "rgba(245,158,11,0.2)", "#f59e0b"
-        elif rank <= 5:
-            badge_bg, badge_color = "rgba(59,130,246,0.15)", "#60a5fa"
-        else:
-            badge_bg, badge_color = "rgba(71,85,105,0.2)", "#94a3b8"
-        rank_html = f'<span class="sr-rank" style="background:{badge_bg};color:{badge_color};">#{rank}</span>'
-    else:
-        rank_html = ""
+    # ---- 信号数据 (Signals) ----
+    signals = precomputed_signals if precomputed_signals else _get_quick_signals(code)
 
-    # 信号 + 指标
+    # ---- 估值丝带计算 (Piecewise Mapping for Diversity) ----
+    pe_pct, pb_pct = 50, 50
+    try:
+        import re
+        # 优先使用实时信号中的 PE/PB
+        pe_val = signals.get('pe', 0)
+        pb_val = signals.get('pb', 0)
+        
+        # 兜底: 尝试从 extra 字符串解析
+        if pe_val == 0:
+            pe_val = float(re.findall(r'PE ([\d.]+)', extra)[0]) if 'PE' in extra else 0
+        if pb_val == 0:
+            pb_val = float(re.findall(r'PB ([\d.]+)', extra)[0]) if 'PB' in extra else 0
+        
+        # PE 映射: 非线性分位模拟器
+        if pe_val > 0:
+            if pe_val < 15: pe_pct = int(5 + pe_val * 0.8) # 5-17%
+            elif pe_val < 30: pe_pct = int(17 + (pe_val - 15) * 1.5) # 17-40%
+            elif pe_val < 60: pe_pct = int(40 + (pe_val - 30) * 1.3) # 40-79%
+            else: pe_pct = min(100, int(80 + (pe_val - 60) * 0.2)) # 80-100%
+            
+        # PB 映射
+        if pb_val > 0:
+            if pb_val < 1.0: pb_pct = int(pb_val * 10) # 0-10%
+            elif pb_val < 2.5: pb_pct = int(10 + (pb_val - 1.0) * 20) # 10-40%
+            elif pb_val < 5.0: pb_pct = int(40 + (pb_val - 2.5) * 15) # 40-77%
+            else: pb_pct = min(100, int(77 + (pb_val - 5.0) * 2)) # 77-100%
+    except Exception:
+        pass
+
+    pe_color = "rgba(16, 185, 129, 0.8)" if pe_pct < 30 else ("rgba(245, 158, 11, 0.8)" if pe_pct < 60 else "rgba(239, 68, 68, 0.8)")
+    pb_color = "rgba(16, 185, 129, 0.8)" if pb_pct < 30 else ("rgba(245, 158, 11, 0.8)" if pb_pct < 60 else "rgba(239, 68, 68, 0.8)")
+
+    # 兜底: 依然为 0 则显示灰色 (e.g. 刚刚上市的新股)
+    pe_is_data = True
+    if pe_val <= 0:
+        pe_is_data = False
+        pe_pct = 0
+        pe_color = "rgba(148, 163, 184, 0.3)"
+
+    # ---- 信号 Pill (Signals UI) ----
     metrics_html = ""
-    action_badge = ""
+    action_html = ""
     if show_signals:
-        signals = _get_quick_signals(code)
+        # 已在上方统一获取 signals
+        action_color = "var(--up-color)" if signals['action_short'] == '买入' else ("var(--down-color)" if signals['action_short'] == '卖出' else "#94a3b8")
+        action_bg = "rgba(239, 68, 68, 0.15)" if signals['action_short'] == '买入' else ("rgba(16, 185, 129, 0.15)" if signals['action_short'] == '卖出' else "rgba(148, 163, 184, 0.1)")
+        
+        action_html = f'<span class="status-pill" style="background:{action_bg}; color:{action_color};">{signals["action"]}</span>'
+        
+        # 紧凑指标 pill (取评分和量比)
+        score_c = "var(--up-color)" if signals['score'] >= 4 else "var(--accent)"
+        metrics_html = f'<div style="display:flex;gap:4px; margin-top:4px;">' \
+                       f'<span class="status-pill" style="background:rgba(56,189,248,0.1); color:{score_c};">分{signals["score"]}</span>' \
+                       f'<span class="status-pill" style="background:rgba(56,189,248,0.1); color:var(--accent);">量{signals["vol_ratio"]:.1f}x</span>' \
+                       f'</div>'
 
-        # 操作建议 badge (第一行右侧)
-        action_color = {"买入": "#ef4444", "卖出": "#10b981", "持有": "#3b82f6", "观望": "#64748b"}.get(
-            signals['action_short'], '#94a3b8')
-        action_bg = {"买入": "rgba(239,68,68,0.15)", "卖出": "rgba(16,185,129,0.15)",
-                     "持有": "rgba(59,130,246,0.15)", "观望": "rgba(100,116,139,0.1)"}.get(
-            signals['action_short'], 'rgba(100,116,139,0.1)')
-        action_badge = (f'<span style="background:{action_bg};color:{action_color};'
-                       f'padding:2px 8px;border-radius:10px;font-size:0.75rem;font-weight:600;'
-                       f'white-space:nowrap;">{signals["action"]}</span>')
+    # ---- 最终卡片 HTML (Quantum Bridge v7.2) ----
+    delay = f"{rank * 0.05}s" if rank else "0s"
+    row_sector = sector
+    
+    # 构建分析标签 HTML
+    tags_html = ""
+    if show_signals:
+        for t in signals.get('tags', []):
+            tags_html += f'<span class="analysis-tag">{t}</span>'
 
-        # 第二行指标 pills
-        rsi = signals.get('rsi', 50)
-        vol_ratio = signals.get('vol_ratio', 1.0)
-        score = signals.get('score', 0)
-        ma_pos = signals.get('ma_pos', '—')
-        macd_dir = signals.get('macd_dir', '—')
+    # 构建 PE 数值文本
+    pe_display_pct = f"{pe_pct}%" if pe_is_data else "N/A"
+    
+    card_html = (
+        f'<div class="signal-card" style="animation: fadeInUp 0.4s ease-out backwards; animation-delay: {delay};">'
+        f'  <div class="card-header">'
+        f'    <div style="display:flex; flex-direction:column;">'
+        f'      <div class="card-title">{stock_name} {in_wl}</div>'
+        f'      <div style="display:flex; align-items:center; gap:6px; margin-top:2px;">'
+        f'        <span class="card-code">{code}</span>'
+        f'        <span class="status-pill" style="background:rgba(56,189,248,0.1); color:var(--accent); font-weight:600; border:1px solid rgba(56,189,248,0.2);">{row_sector}</span>'
+        f'        {action_html}'
+        f'      </div>'
+        f'    </div>'
+        f'    <div class="card-price-area">'
+        f'      <div class="card-price">¥{price:.2f}</div>'
+        f'      <div class="card-change" style="color:{chg_color};">{chg_icon}{abs(change):.2f}%</div>'
+        f'    </div>'
+        f'  </div>'
+        f'  <div style="display:flex; gap:4px; flex-wrap:wrap; margin-top:4px;">{tags_html}</div>'
+        f'  {metrics_html}'
+        f'  <div style="margin-top:auto;">'
+        f'    <div class="ribbon-label"><span>PE 分位</span><span>{pe_display_pct}</span></div>'
+        f'    <div class="valuation-ribbon"><div class="ribbon-bar" style="width:{pe_pct or 100}%; background:{pe_color};"></div></div>'
+        f'    <div class="valuation-ribbon" style="height:2px; margin-top:2px;"><div class="ribbon-bar" style="width:{pb_pct}%; background:{pb_color};"></div></div>'
+        f'  </div>'
+        f'</div>'
+    )
+    
+    st.markdown(card_html, unsafe_allow_html=True)
 
-        # RSI 颜色
-        if rsi > 70: rsi_c, rsi_bg = '#ef4444', 'rgba(239,68,68,0.12)'
-        elif rsi < 30: rsi_c, rsi_bg = '#10b981', 'rgba(16,185,129,0.12)'
-        else: rsi_c, rsi_bg = '#94a3b8', 'rgba(148,163,184,0.08)'
-
-        # 量比颜色
-        if vol_ratio > 2.0: vr_c, vr_bg = '#ef4444', 'rgba(239,68,68,0.12)'
-        elif vol_ratio > 1.2: vr_c, vr_bg = '#f59e0b', 'rgba(245,158,11,0.12)'
-        else: vr_c, vr_bg = '#94a3b8', 'rgba(148,163,184,0.08)'
-
-        # 评分颜色
-        if score >= 4: sc_c, sc_bg = '#ef4444', 'rgba(239,68,68,0.12)'
-        elif score >= 3: sc_c, sc_bg = '#f59e0b', 'rgba(245,158,11,0.12)'
-        elif score <= 1: sc_c, sc_bg = '#10b981', 'rgba(16,185,129,0.12)'
-        else: sc_c, sc_bg = '#94a3b8', 'rgba(148,163,184,0.08)'
-
-        # MA 位置颜色
-        ma_c = '#ef4444' if '多头' in ma_pos else ('#10b981' if '空头' in ma_pos else '#f59e0b')
-
-        # MACD 颜色
-        macd_c = '#ef4444' if '红' in macd_dir else ('#10b981' if '绿' in macd_dir else '#94a3b8')
-
-        # 买卖信号
-        buy_color = "#10b981" if "可" in signals['buy'] or "建议" in signals['buy'] else (
-            "#f59e0b" if "关注" in signals['buy'] or "向好" in signals['buy'] else "#64748b")
-        sell_color = "#ef4444" if "止损" in signals['sell'] or "减仓" in signals['sell'] else (
-            "#f59e0b" if "关注" in signals['sell'] or "风险" in signals['sell'] else "#64748b")
-
-        pill = ('<span style="font-size:0.7rem;padding:1px 6px;border-radius:4px;'
-               'white-space:nowrap;background:{bg};color:{c};">{txt}</span>')
-
-        metrics_html = ('<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px;">'
-            + pill.format(bg=sc_bg, c=sc_c, txt=f'评分 {score}/5')
-            + pill.format(bg=rsi_bg, c=rsi_c, txt=f'RSI {rsi:.0f}')
-            + pill.format(bg=vr_bg, c=vr_c, txt=f'量比 {vol_ratio:.1f}')
-            + pill.format(bg='rgba(148,163,184,0.08)', c=ma_c, txt=f'均线 {ma_pos}')
-            + pill.format(bg='rgba(148,163,184,0.08)', c=macd_c, txt=f'MACD {macd_dir}')
-            + pill.format(bg='rgba(148,163,184,0.08)', c=buy_color, txt=f'买 {signals["buy"]}')
-            + pill.format(bg='rgba(148,163,184,0.08)', c=sell_color, txt=f'卖 {signals["sell"]}')
-            + '</div>')
-
-    extra_html = f'<span class="sr-extra">{extra}</span>' if extra else ''
-    price_str = f"¥{price:.2f}" if price > 0 else "--"
-
-    # 卡片 HTML + 按钮列
-    row_col, btn_col = st.columns([7, 1])
-    with row_col:
-        delay = f"{rank * 0.02 if rank else 0}s"
-        html = (f'<div class="stock-row" style="animation:fadeInUp 0.25s ease-out backwards;'
-                f'animation-delay:{delay};flex-direction:column;align-items:stretch;">'
-                f'<div style="display:flex;align-items:center;gap:8px;">'
-                f'{rank_html}'
-                f'<span class="sr-name">{stock_name}</span>'
-                f'<span class="sr-code">{code} {in_wl}</span>'
-                f'{extra_html}'
-                f'<span class="sr-price">{price_str}</span>'
-                f'<span class="sr-change" style="color:{chg_color};">{chg_icon}{abs(change):.2f}%</span>'
-                f'{action_badge}'
-                f'</div>'
-                f'{metrics_html}'
-                f'</div>')
-        st.markdown(html, unsafe_allow_html=True)
-
-    with btn_col:
-        bc1, bc2 = st.columns(2)
-        with bc1:
-            if st.button("📊", key=f"{btn_prefix}_a_{code}", help=f"分析 {stock_name}"):
-                st.session_state['selected_stock'] = code
-                st.session_state['market_view'] = 'analyze'
+    # 底部操作按钮 (使用 PRO_SSM_V7_ 唯一 Key)
+    c1, c2, c3 = st.columns([1, 1, 1])
+    with c1:
+        if st.button("📊分析", key=f"PRO_SSM_V7_{btn_prefix}_a_{code}", use_container_width=True):
+            st.session_state['selected_stock'] = code
+            st.session_state['market_view'] = 'analyze'
+            st.rerun()
+    with c2:
+        if show_watchlist_btn and code not in my_stocks:
+            if st.button("⭐加自选", key=f"PRO_SSM_V7_{btn_prefix}_w_{code}", use_container_width=True):
+                my_stocks.append(code)
+                save_watchlist(my_stocks)
+                st.toast(f"✅ {stock_name} 已加入自选", icon="⭐")
                 st.rerun()
-        with bc2:
-            if show_remove_btn:
-                if st.button("🗑️", key=f"{btn_prefix}_d_{code}", help="移出自选"):
-                    my_stocks.remove(code)
-                    save_watchlist(my_stocks)
-                    st.toast(f"{stock_name} 已移出自选", icon="🗑️")
-                    st.rerun()
-            elif show_watchlist_btn:
-                if code not in my_stocks:
-                    if st.button("⭐", key=f"{btn_prefix}_w_{code}", help=f"加自选"):
-                        my_stocks.append(code)
-                        save_watchlist(my_stocks)
-                        st.toast(f"✅ {stock_name} 已加入自选", icon="⭐")
-                        st.rerun()
-                else:
-                    st.button("✓", key=f"{btn_prefix}_w_{code}", disabled=True, help="已在自选")
+        elif show_remove_btn:
+             if st.button("🗑️移除", key=f"PRO_SSM_V7_{btn_prefix}_d_{code}", use_container_width=True):
+                my_stocks.remove(code)
+                save_watchlist(my_stocks)
+                st.toast(f"{stock_name} 已从自选移除", icon="🗑️")
+                st.rerun()
+    with c3:
+        st.button("⚙️", key=f"PRO_SSM_V7_{btn_prefix}_cfg_{code}", use_container_width=True)
+
 
 
 # ============================================================
@@ -248,10 +247,6 @@ def _render_stock_row(code, stock_name, price, change, rank=0, extra="",
 def _render_strategy_view(L, my_stocks, name_map):
     """策略选股视图 — pill按钮 + 紧凑行"""
 
-    if 'capture_strat' not in st.session_state:
-        st.session_state['capture_strat'] = 'Hotspot'
-
-    # ========== 策略 pill 按钮 ==========
     strat_defs = [
         ('Hotspot', '🏭 2026热点', '2026 六大核心赛道龙头', '#ef4444'),
         ('Value', '💎 价值发现', '低PE+低PB，被低估的优质标的', '#3b82f6'),
@@ -263,77 +258,34 @@ def _render_strategy_view(L, my_stocks, name_map):
         ('Concept', '📡 概念板块', 'Tushare 879个概念板块', '#f97316'),
     ]
 
-    current_strat = st.session_state['capture_strat']
-
-    # Pill buttons via Streamlit columns (8 pills)
-    pill_cols = st.columns(8)
+    # ========== 策略标签页 (Strategy Dynamic Tabs) ==========
+    tabs = st.tabs([f"{label}" for _, label, _, _ in strat_defs])
+    
     for i, (key, label, desc, color) in enumerate(strat_defs):
-        with pill_cols[i]:
-            btn_type = "primary" if current_strat == key else "secondary"
-            if st.button(label, use_container_width=True, type=btn_type, key=f"pill_{key}"):
-                st.session_state['capture_strat'] = key
-                st.rerun()
-
-    # 策略描述 (紧凑)
-    for key, _, desc, color in strat_defs:
-        if key == current_strat:
+        with tabs[i]:
             st.caption(f"📌 {desc}")
-            break
-
-    # ========== 策略分发 ==========
-    if current_strat == 'Hotspot':
-        _render_hotspot_strategy(L, my_stocks, name_map)
-        return
-
-    if current_strat == 'Concept':
-        _render_concept_strategy(L, my_stocks, name_map)
-        return
-
-    # ========== 常规策略 ==========
-    strat_labels = {
-        'Value': '💎 扫描价值股...',
-        'Momentum': '🔥 扫描动量股...',
-        'Growth': '🌟 扫描成长股...',
-        'Mainforce': '💰 分析3日主力资金...',
-        'Northbound': '🔗 获取陆股通数据...',
-        'Breakout': '📈 扫描技术突破信号...',
-    }
-    load_label = strat_labels.get(current_strat, '扫描中...')
-
-    is_tushare = current_strat in ('Mainforce', 'Northbound', 'Breakout')
-
-    if is_tushare:
-        with st.status(load_label, expanded=True) as status:
-            if current_strat == 'Mainforce':
-                from core.strategies import find_mainforce_stocks
-                df = find_mainforce_stocks()
-            elif current_strat == 'Northbound':
-                from core.strategies import find_northbound_top
-                df = find_northbound_top()
+            
+            if key == 'Hotspot':
+                _render_tag_filter_bar()
+                _render_hotspot_strategy(L, my_stocks, name_map)
+            elif key == 'Concept':
+                _render_concept_strategy(L, my_stocks, name_map)
             else:
-                from core.strategies import find_tech_breakout
-                df = find_tech_breakout()
-            if not df.empty:
-                status.update(label=f"✅ 找到 {len(df)} 只标的", state="complete")
-            else:
-                status.update(label="未找到符合条件的标的", state="error")
-    else:
-        with st.spinner(load_label):
-            if current_strat == 'Value':
-                df = find_value_stocks()
-            elif current_strat == 'Momentum':
-                df = find_momentum_stocks()
-            elif current_strat == 'Growth':
-                df = find_growth_stocks()
-            else:
-                df = pd.DataFrame()
-
-    if df.empty:
-        st.info("暂无符合条件的股票，请稍后重试")
-        return
-
-    st.session_state['_strat_list'] = df['代码'].tolist()
-    _render_stock_list(df, my_stocks, name_map)
+                # Value, Momentum, Growth, Mainforce, Northbound, Breakout
+                func_map = {
+                    'Value': find_value_stocks,
+                    'Momentum': find_momentum_stocks,
+                    'Growth': find_growth_stocks,
+                    'Mainforce': lambda: __import__('core.strategies', fromlist=['find_mainforce_stocks']).find_mainforce_stocks(),
+                    'Northbound': lambda: __import__('core.strategies', fromlist=['find_northbound_top']).find_northbound_top(),
+                    'Breakout': lambda: __import__('core.strategies', fromlist=['find_tech_breakout']).find_tech_breakout()
+                }
+                
+                if key in func_map:
+                    df = func_map[key]()
+                    _render_generic_strategy_tab(key, df, my_stocks, name_map)
+                else:
+                    st.info("💡 该策略正在接入中...")
 
 
 def _render_hotspot_strategy(L, my_stocks, name_map):
@@ -366,15 +318,14 @@ def _render_hotspot_strategy(L, my_stocks, name_map):
         sector = HOTSPOT_2026[sel]
         st.caption(f"💡 {sector['desc']}")
 
-    with st.spinner("获取 2026 赛道行情..."):
+    with st.spinner("获取 赛道行情..."):
         df = find_hotspot_stocks(sel)
 
     if df.empty:
         st.info("暂无数据")
         return
 
-    st.session_state['_strat_list'] = df['代码'].tolist()
-    _render_stock_list(df, my_stocks, name_map)
+    _render_generic_strategy_tab(f"hot_{sel if sel else 'all'}", df, my_stocks, name_map)
 
 
 def _render_concept_strategy(L, my_stocks, name_map):
@@ -392,7 +343,6 @@ def _render_concept_strategy(L, my_stocks, name_map):
         with hw_cols[i]:
             if st.button(word, key=f"hw_{word}", use_container_width=True):
                 st.session_state['concept_search'] = word
-                st.rerun()
 
     search_col, select_col = st.columns([1, 2])
     with search_col:
@@ -408,68 +358,119 @@ def _render_concept_strategy(L, my_stocks, name_map):
         return
 
     with select_col:
-        options = filtered['name'].tolist()[:30]
-        selected = st.selectbox("选择概念板块", options, key="concept_select")
+        options = filtered['name'].tolist()[:50]
+        selected_concept = st.selectbox("选择具体板块", options, key="concept_select_box_v1")
 
-    if selected:
-        concept_row = filtered[filtered['name'] == selected].iloc[0]
-        concept_id = str(concept_row.get('code', ''))
-
-        st.caption(f"📌 {selected} (Tushare ID: {concept_id})")
-
-        with st.status(f"获取 {selected} 成分股行情...", expanded=True) as status:
-            df = find_concept_stocks_detail(concept_id, selected)
-            if df.empty:
-                status.update(label="暂无成分股数据", state="error")
-                return
-            status.update(label=f"✅ {selected} — {len(df)} 只成分股", state="complete")
-
-        st.session_state['_strat_list'] = df['代码'].tolist()
-        _render_stock_list(df, my_stocks, name_map)
+    if selected_concept:
+        with st.spinner(f"正在加载 {selected_concept} 成分股..."):
+            # 获取对应的 code (Tushare 概念代码)
+            matched = filtered[filtered['name'] == selected_concept]
+            if not matched.empty:
+                concept_id = str(matched['code'].iloc[0])
+                df = find_concept_stocks_detail(concept_id, selected_concept)
+                if not df.empty:
+                    _render_generic_strategy_tab(f"concept_{concept_id}", df, my_stocks, name_map)
+                else:
+                    st.warning("该板块暂无成分股数据")
 
 
 # ============================================================
 #  股票列表渲染 (调用统一 _render_stock_row)
 # ============================================================
+def _render_tag_filter_bar():
+    """标签快速选择条 — 提供基于行业或信号的极速过滤"""
+    st.markdown("""<style>
+        .tag-pill {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            background: rgba(56, 189, 248, 0.1);
+            color: #38bdf8;
+            font-size: 0.75rem;
+            cursor: pointer;
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            margin-right: 8px;
+            margin-bottom: 8px;
+            transition: all 0.2s;
+        }
+        .tag-pill:hover {
+            background: rgba(56, 189, 248, 0.2);
+            border-color: #38bdf8;
+        }
+        .tag-pill.active {
+            background: #38bdf8;
+            color: #0f172a;
+            font-weight: 700;
+        }
+    </style>""", unsafe_allow_html=True)
+
+    tags = ["全部", "🤖 机器人", "🛩️ 低空经济", "⚡ AI算力", "🔋 固态电池", "🧬 创新药", "🌐 数据要素", "🔥 热门概念"]
+    
+    if 'active_tag' not in st.session_state:
+        st.session_state['active_tag'] = "全部"
+        
+    cols = st.columns(len(tags))
+    for i, tag in enumerate(tags):
+        with cols[i]:
+            is_active = st.session_state['active_tag'] == tag
+            if st.button(tag, key=f"tag_filter_{i}", use_container_width=True, 
+                        type="primary" if is_active else "secondary"):
+                st.session_state['active_tag'] = tag
+                # 如果选择了具体标签，自动尝试对应到热点赛道
+                mapping = {
+                    "🤖 机器人": "robot", "🛩️ 低空经济": "low_alt", "⚡ AI算力": "ai_power",
+                    "🔋 固态电池": "solid_bat", "🧬 创新药": "bio_drug", "🌐 数据要素": "data_elem"
+                }
+                if tag in mapping:
+                    st.session_state['capture_strat'] = 'Hotspot'
+                    st.session_state['hotspot_sector'] = mapping[tag]
+                elif tag == "全部":
+                    st.session_state['capture_strat'] = 'Hotspot'
+                    st.session_state['hotspot_sector'] = None
+                st.rerun()
+
 def _render_stock_list(df, my_stocks, name_map):
-    """渲染策略股票列表 — 紧凑行"""
+    """三列网格化渲染 — 增加标签过滤逻辑"""
+    active_tag = st.session_state.get('active_tag', "全部")
+    if active_tag != "全部" and '板块' in df.columns:
+        # 去掉 emoji 后的名称匹配
+        clean_tag = active_tag.split(' ')[-1]
+        df = df[df['板块'].str.contains(clean_tag, na=False)]
 
-    for rank, (idx, row) in enumerate(df.iterrows(), 1):
-        code = str(row.get('代码', ''))
-        stock_name = str(row.get('名称', ''))
-        try:
-            price = float(row.get('最新价', 0))
-        except (ValueError, TypeError):
-            price = 0.0
-        try:
-            change = float(row.get('涨跌幅', 0))
-        except (ValueError, TypeError):
-            change = 0.0
+    if df.empty:
+        st.info(f"没有找到属于「{active_tag}」标签的个股")
+        return
 
-        # 额外数据
-        extra = ""
-        if 'PE' in df.columns:
-            try:
-                pe = float(row.get('PE', 0) or 0)
-                pb = float(row.get('PB', 0) or 0)
-            except (ValueError, TypeError):
-                pe, pb = 0, 0
-            extra = f"PE {pe:.1f} · PB {pb:.2f}"
-        elif '板块' in df.columns and row.get('板块'):
-            extra = str(row.get('板块', ''))
-        elif '成交额' in df.columns:
-            try:
-                amt = float(row.get('成交额', 0) or 0)
-            except (ValueError, TypeError):
-                amt = 0
-            if amt > 0:
-                extra = f"成交 {amt/1e8:.1f}亿"
+    cols_per_row = 3
+    for i in range(0, len(df), cols_per_row):
+        cols = st.columns(cols_per_row)
+        chunk = df.iloc[i : i + cols_per_row]
+        
+        for idx_in_row, (idx, row) in enumerate(chunk.iterrows()):
+            with cols[idx_in_row]:
+                rank = i + idx_in_row + 1
+                code = str(row.get('代码', ''))
+                stock_name = str(row.get('名称', ''))
+                try:
+                    price = float(row.get('最新价', 0))
+                except (ValueError, TypeError):
+                    price = 0.0
+                try:
+                    change = float(row.get('涨跌幅', 0))
+                except (ValueError, TypeError):
+                    change = 0.0
 
-        _render_stock_row(
-            code, stock_name, price, change,
-            rank=rank, extra=extra, my_stocks=my_stocks,
-            btn_prefix=f"sl{rank}", show_signals=True
-        )
+                # 提取估值与板块
+                pe = row.get('PE', row.get('市盈率', 0))
+                pb = row.get('PB', row.get('市净率', 0))
+                extra_val = f"PE {pe} PB {pb}" if pe else ""
+                sector = row.get('板块', '概念挖掘')
+
+                _render_stock_card(
+                    code, stock_name, price, change,
+                    rank=rank, extra=extra_val, sector=sector, my_stocks=my_stocks,
+                    btn_prefix=f"sl{rank}", show_signals=True
+                )
 
 
 # ============================================================
@@ -483,6 +484,11 @@ def _render_analyze_view(L, my_stocks, name_map):
     cur_name = name_map.get(current, '')
     strat_list = st.session_state.get('_strat_list', [])
     in_watchlist = current in my_stocks
+
+    # ---- 返回列表按钮 (Universal Navigation Back) ----
+    if st.button("⬅️ 返回策略列表", key="back_to_strat"):
+        st.session_state['market_view'] = '📋 策略选股'
+        st.rerun()
 
     # ---- 紧凑操作栏: ◀ | 进度 | 加/移自选 | ▶ ----
     if strat_list and current in strat_list:
@@ -631,13 +637,19 @@ def _render_track_view(L, my_stocks, name_map):
     elif sort_by == "涨幅↑":
         stock_data.sort(key=lambda x: x['change'])
 
-    # ========== 渲染 — 复用统一行组件 ==========
-    for i, item in enumerate(stock_data):
-        _render_stock_row(
-            item['code'], item['name'], item['price'], item['change'],
-            my_stocks=my_stocks, btn_prefix=f"tk{i}",
-            show_signals=True, show_watchlist_btn=False, show_remove_btn=True
-        )
+    # ========== 渲染 — 机构版网格自愈逻辑 ==========
+    cols_per_row = 3
+    for i in range(0, len(stock_data), cols_per_row):
+        cols = st.columns(cols_per_row)
+        chunk = stock_data[i : i + cols_per_row]
+        
+        for idx_in_row, item in enumerate(chunk):
+            with cols[idx_in_row]:
+                _render_stock_card(
+                    item['code'], item['name'], item['price'], item['change'],
+                    my_stocks=my_stocks, btn_prefix=f"tk{i+idx_in_row}",
+                    show_signals=True, show_watchlist_btn=False, show_remove_btn=True
+                )
 
 
 # ============================================================
@@ -646,161 +658,175 @@ def _render_track_view(L, my_stocks, name_map):
 @st.cache_data(ttl=600, show_spinner=False)
 def _get_quick_signals(code: str) -> dict:
     """
-    轻量级技术信号 (缓存 2min)
-    基于 30 日 K 线: MA5/MA20 (kline 自带), RSI/MACD (自算)
-    返回: {status, buy, sell, action, action_short}
+    轻量级技术信号 (缓存 10min) - 统一 DNA 引擎版
     """
     import numpy as np
+    from modules.data_loader import fetch_kline
+    from modules.quant import calculate_metrics, calculate_all_indicators
+    from modules.analysis.dna_engine import get_dna_score
+    from core.tushare_client import get_ts_client
+
     default = {'status': '—', 'buy': '—', 'sell': '—', 'action': '—', 'action_short': '观望',
-                'rsi': 50, 'vol_ratio': 1.0, 'score': 0, 'ma_pos': '—', 'macd_dir': '—'}
+                'rsi': 50, 'vol_ratio': 1.0, 'score': 0, 'ma_pos': '—', 'macd_dir': '—', 'tags': []}
     try:
-        from modules.data_loader import fetch_kline
         full = ("sh" if code.startswith('6') else "sz") + code
-        kline = fetch_kline(full, period='daily', datalen=60)
-        if kline is None or kline.empty or len(kline) < 15:
+        kline = fetch_kline(full, period='daily', datalen=100)
+        if kline is None or kline.empty or len(kline) < 20:
             return default
 
-        closes = kline['收盘'].astype(float)
-        volumes = kline['成交量'].astype(float)
-
-        # --- MA ---
-        ma5 = float(kline.iloc[-1].get('MA5', 0) or 0)
-        ma20 = float(kline.iloc[-1].get('MA20', 0) or 0)
-        if ma5 == 0:
-            ma5 = closes.tail(5).mean()
-        if ma20 == 0:
-            ma20 = closes.tail(20).mean()
-        ma10 = closes.tail(10).mean()
-
-        prev_ma5 = float(kline.iloc[-2].get('MA5', 0) or 0)
-        prev_ma20 = float(kline.iloc[-2].get('MA20', 0) or 0)
-        if prev_ma5 == 0:
-            prev_ma5 = closes.iloc[-6:-1].mean()
-        if prev_ma20 == 0 and len(closes) >= 21:
-            prev_ma20 = closes.iloc[-21:-1].mean()
-
-        # --- RSI (14日) ---
-        delta = closes.diff()
-        gain = delta.clip(lower=0)
-        loss = (-delta.clip(upper=0))
-        avg_gain = gain.rolling(14, min_periods=14).mean()
-        avg_loss = loss.rolling(14, min_periods=14).mean()
-        rs = avg_gain / avg_loss.replace(0, np.nan)
-        rsi_series = 100 - (100 / (1 + rs))
-        rsi = float(rsi_series.iloc[-1]) if not np.isnan(rsi_series.iloc[-1]) else 50
-
-        # --- MACD (12,26,9) ---
-        ema12 = closes.ewm(span=12, adjust=False).mean()
-        ema26 = closes.ewm(span=26, adjust=False).mean()
-        macd_line = ema12 - ema26
-        signal_line = macd_line.ewm(span=9, adjust=False).mean()
-        macd_hist_series = macd_line - signal_line
-        macd_hist = float(macd_hist_series.iloc[-1])
-        prev_macd_hist = float(macd_hist_series.iloc[-2])
-
-        close = float(closes.iloc[-1])
-        prev_close = float(closes.iloc[-2])
-        vol = float(volumes.iloc[-1])
-        vol_avg5 = float(volumes.tail(5).mean())
-
-        # ===== 状态判断 (5分制) =====
-        score = 0
-        if ma5 > ma20: score += 1
-        if ma5 > ma10: score += 1
-        if close > ma20: score += 1
-        if macd_hist > 0: score += 1
-        if rsi > 50: score += 1
-
-        if score >= 4:
-            status = "看多 📈"
-        elif score <= 1:
-            status = "看空 📉"
-        else:
-            status = "震荡 ↔️"
-
-        # ===== 买点判断 =====
-        buy_signals = []
-        if ma5 > ma20 and prev_ma5 <= prev_ma20:
-            buy_signals.append("金叉")
-        if rsi < 35:
-            buy_signals.append("超卖")
-        if macd_hist > 0 and prev_macd_hist <= 0:
-            buy_signals.append("MACD翻红")
-        if close > ma20 and vol < vol_avg5 * 0.8 and close < prev_close:
-            buy_signals.append("缩量回踩")
-
-        if buy_signals:
-            buy = f"可关注({','.join(buy_signals[:2])})"
-        elif score >= 3 and close > ma20:
-            buy = "趋势向好"
-        else:
-            buy = "暂不明确"
-
-        # ===== 卖点判断 =====
-        sell_signals = []
-        if ma5 < ma20 and prev_ma5 >= prev_ma20:
-            sell_signals.append("死叉")
-        if rsi > 75:
-            sell_signals.append("超买")
-        if macd_hist < 0 and prev_macd_hist >= 0:
-            sell_signals.append("MACD翻绿")
-        if close < prev_close and vol > vol_avg5 * 1.5:
-            sell_signals.append("放量下跌")
-
-        if sell_signals:
-            sell = f"⚠ 关注({','.join(sell_signals[:2])})"
-        elif score <= 2:
-            sell = "注意风险"
-        else:
-            sell = "暂无信号"
-
-        # ===== 操作建议 =====
-        if buy_signals and score >= 3:
-            action = "🟢 逢低布局"
-            action_short = "买入"
-        elif sell_signals and score <= 2:
-            action = "🔴 考虑减仓"
-            action_short = "卖出"
-        elif score >= 4:
-            action = "🔵 持有待涨"
-            action_short = "持有"
-        elif score <= 1:
-            action = "⚪ 回避观望"
-            action_short = "观望"
-        else:
-            action = "🟡 震荡等待"
-            action_short = "观望"
-
-        # 均线位置
-        if ma5 > ma10 > ma20:
-            ma_pos = '多头排列'
-        elif ma5 < ma10 < ma20:
-            ma_pos = '空头排列'
-        elif close > ma20:
-            ma_pos = '站上MA20'
-        else:
-            ma_pos = '跌破MA20'
-
-        # MACD 方向
-        if macd_hist > 0 and macd_hist > prev_macd_hist:
-            macd_dir = '红柱增'
-        elif macd_hist > 0:
-            macd_dir = '红柱缩'
-        elif macd_hist < 0 and macd_hist < prev_macd_hist:
-            macd_dir = '绿柱增'
-        elif macd_hist < 0:
-            macd_dir = '绿柱缩'
-        else:
-            macd_dir = '零轴'
-
-        # 量比
+        # 1. 统一指标计算
+        kline = calculate_all_indicators(kline)
+        q_metrics = calculate_metrics(kline)
+        
+        latest = kline.iloc[-1]
+        prev = kline.iloc[-2]
+        close = float(latest['收盘'])
+        prev_close = float(prev['收盘'])
+        day_change = (close - prev_close) / prev_close * 100 if prev_close > 0 else 0
+        
+        # 量比计算
+        vol = float(latest['成交量'])
+        vol_avg5 = kline['成交量'].tail(5).mean()
         vol_ratio = round(vol / vol_avg5, 2) if vol_avg5 > 0 else 1.0
 
+        # 2. 统一 DNA 算法评分 (-10 to +10)
+        score = get_dna_score(q_metrics, day_change, vol_ratio)
+
+        # 3. 状态及买卖点映射
+        if score >= 3:
+            status = "看多 🚀"
+            buy = "建议布局"
+            action = "🟢 逢低加仓" if score >= 6 else "🔵 持有为主"
+            action_short = "买入"
+        elif score <= -3:
+            status = "看空 📉"
+            buy = "暂缓进场"
+            action = "🔴 警惕风险" if score <= -6 else "⚪ 止盈避险"
+            action_short = "卖出"
+        else:
+            status = "震荡 ↔️"
+            buy = "观望"
+            action = "🟡 箱体震荡"
+            action_short = "观望"
+
+        # 4. 辅助指标
+        ma_pos = '多头' if q_metrics.get('ma_trend') == 'up' else '回调'
+        macd_val = q_metrics.get('macd_hist', 0)
+        macd_dir = '红轴' if macd_val > 0 else '绿轴'
+        
+        # 5. 获取 Tushare 估值
+        pe_val_db, pb_val_db = 0, 0
+        ts = get_ts_client()
+        if ts.available:
+            basic = ts.get_daily_basic(code, limit=1)
+            if basic is not None and not basic.empty:
+                pe_val_db = float(basic.iloc[0].get('pe_ttm') or basic.iloc[0].get('pe') or 0)
+                pb_val_db = float(basic.iloc[0].get('pb') or 0)
+
+        # 6. 分析标签 (Refined from q_metrics)
+        tags = []
+        if score >= 5: tags.append("💎 机构看好")
+        elif score <= -5: tags.append("⚠️ 风险提示")
+        
+        rsi_val = q_metrics.get('rsi', 50)
+        if rsi_val < 30: tags.append("🟢 RSI超卖")
+        elif rsi_val > 75: tags.append("🔴 RSI超买")
+        
+        if vol_ratio > 1.8: tags.append("🔥 放量突破")
+        elif vol_ratio < 0.6: tags.append("❄️ 缩量调整")
+        
+        if day_change > 4: tags.append("🚀 走势强劲")
+        
+        # 补充均线位置
+        if ma_pos == '多头': tags.append("📈 趋势多头")
+
         return {
-            'status': status, 'buy': buy, 'sell': sell,
+            'status': status, 'buy': buy, 'sell': '一般' if score > -3 else '风险', 
             'action': action, 'action_short': action_short,
-            'rsi': rsi, 'vol_ratio': vol_ratio, 'score': score,
-            'ma_pos': ma_pos, 'macd_dir': macd_dir,
+            'rsi': rsi_val, 'vol_ratio': vol_ratio, 'score': score,
+            'ma_pos': ma_pos, 'macd_dir': macd_dir, 'tags': tags[:8],
+            'pe': pe_val_db, 'pb': pb_val_db
         }
     except Exception:
         return default
+    except Exception:
+        return default
+# ============================================================
+#  批量信号处理引擎 (Batch Intelligence Engine)
+# ============================================================
+def _batch_get_all_signals(codes: list) -> dict:
+    """多线程并发计算所有标的的实时信号 (加速秒开)"""
+    import concurrent.futures
+    results = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        future_to_code = {executor.submit(_get_quick_signals, c): c for c in codes}
+        for future in concurrent.futures.as_completed(future_to_code):
+            c = future_to_code[future]
+            try:
+                results[c] = future.result()
+            except Exception:
+                results[c] = {'tags': [], 'action_short': '观望', 'score': 0, 'vol_ratio': 1.0, 'action': '—'}
+    return results
+
+def _render_generic_strategy_tab(key, df, my_stocks, name_map):
+    """通用策略标签页渲染逻辑 (带过滤)"""
+    if df.empty:
+        st.info("💡 暂时没有符合该策略的标的。")
+        return
+
+    # 1. 预计算所有信号
+    codes = df['代码'].astype(str).tolist()
+    all_signals = _batch_get_all_signals(codes)
+    
+    # 2. 收集所有可用标签用于过滤
+    all_available_tags = set()
+    for s_data in all_signals.values():
+        all_available_tags.update(s_data.get('tags', []))
+    
+    # 3. 过滤 UI
+    col_f1, col_f2 = st.columns([4, 1])
+    with col_f1:
+        f_tags = st.multiselect("🔍 标签过滤 (多选并集)", sorted(list(all_available_tags)), 
+                               key=f"filter_{key}", help="仅显示包含所选标签的标的")
+    with col_f2:
+        st.markdown(f'<div style="text-align:right; color:#64748b; padding-top:28px;">{len(df)} 支</div>', unsafe_allow_html=True)
+
+    # 4. 执行过滤
+    display_df = df
+    if f_tags:
+        filtered_codes = []
+        for c, s_data in all_signals.items():
+            if any(t in s_data.get('tags', []) for t in f_tags):
+                filtered_codes.append(c)
+        display_df = df[df['代码'].astype(str).isin(filtered_codes)]
+        st.caption(f"✨ 过滤后匹配 {len(display_df)} 支")
+
+    # 5. 渲染与状态保存 (Render & State preservation for Analysis)
+    if not display_df.empty:
+        # 保存当前列表到 session_state 供 "深度分析" 视图进行 上一只/下一只 导航
+        st.session_state['_strat_list'] = display_df['代码'].astype(str).tolist()
+        
+        # 重写渲染循环以使用预计算的 all_signals
+        cols_per_row = 3
+        for i in range(0, len(display_df), cols_per_row):
+            cols = st.columns(cols_per_row)
+            chunk = display_df.iloc[i : i + cols_per_row]
+            for idx_in_row, (_, row) in enumerate(chunk.iterrows()):
+                with cols[idx_in_row]:
+                    code = str(row.get('代码', ''))
+                    # 模拟 _render_stock_list 的参数提取
+                    price = float(row.get('最新价', 0))
+                    change = float(row.get('涨跌幅', 0))
+                    sector = row.get('板块', '概念挖掘')
+                    pe = row.get('PE', row.get('市盈率', 0))
+                    pb = row.get('PB', row.get('市净率', 0))
+                    extra_val = f"PE {pe} PB {pb}" if pe else ""
+                    
+                    _render_stock_card(
+                        code, str(row.get('名称', '')), price, change,
+                        rank=i+idx_in_row+1, extra=extra_val, sector=sector,
+                        my_stocks=my_stocks, name_map=name_map, btn_prefix=f"strat_{key}_{i+idx_in_row}",
+                        precomputed_signals=all_signals.get(code)
+                    )
+    else:
+        st.warning("🏮 没有匹配过滤条件的标的")

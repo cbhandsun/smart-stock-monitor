@@ -76,16 +76,10 @@ def calculate_metrics(df):
     cci = (tp - tp_ma) / (0.015 * tp_std)
     cci = cci.replace([np.inf, -np.inf], np.nan)
     
-    # 8. OBV指标 (On Balance Volume)
-    obv = pd.Series(index=close.index, dtype=float)
-    obv.iloc[0] = volume.iloc[0]
-    for i in range(1, len(close)):
-        if close.iloc[i] > close.iloc[i-1]:
-            obv.iloc[i] = obv.iloc[i-1] + volume.iloc[i]
-        elif close.iloc[i] < close.iloc[i-1]:
-            obv.iloc[i] = obv.iloc[i-1] - volume.iloc[i]
-        else:
-            obv.iloc[i] = obv.iloc[i-1]
+    # 8. OBV指标 (On Balance Volume) - 向量化重构
+    diff = close.diff()
+    direction = np.sign(diff).fillna(0)
+    obv = (direction * volume).cumsum()
     obv_ma = obv.rolling(window=20).mean()
     
     # 9. DMI指标 (Directional Movement Index)
@@ -199,17 +193,10 @@ def calculate_all_indicators(df):
     df['CCI'] = (tp - tp_ma) / (0.015 * tp_std)
     df['CCI'] = df['CCI'].replace([np.inf, -np.inf], np.nan)
     
-    # OBV
-    obv = pd.Series(index=close.index, dtype=float)
-    obv.iloc[0] = volume.iloc[0] if len(volume) > 0 else 0
-    for i in range(1, len(close)):
-        if close.iloc[i] > close.iloc[i-1]:
-            obv.iloc[i] = obv.iloc[i-1] + volume.iloc[i]
-        elif close.iloc[i] < close.iloc[i-1]:
-            obv.iloc[i] = obv.iloc[i-1] - volume.iloc[i]
-        else:
-            obv.iloc[i] = obv.iloc[i-1]
-    df['OBV'] = obv
+    # OBV - 向量化重构
+    diff = close.diff()
+    direction = np.sign(diff).fillna(0)
+    df['OBV'] = (direction * volume).cumsum()
     df['OBV_MA'] = df['OBV'].rolling(window=20).mean()
     
     # DMI

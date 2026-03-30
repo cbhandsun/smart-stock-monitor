@@ -8,6 +8,7 @@ import time
 import re
 import datetime
 import json
+import concurrent.futures
 # 延迟导入 data_loader (akshare 很重, 首屏不需要)
 # from modules.data_loader import fetch_trading_signals, fetch_kline
 def fetch_trading_signals(*a, **kw):
@@ -191,25 +192,27 @@ def get_full_market_data():
             _redis.set(f"market:{cache_key}", df, expire=300)
     return df
 
-@st.cache_data(ttl=86400, show_spinner=False) # Streamlit cache extended to 24h
+@st.cache_data(ttl=86400, show_spinner=False)
 def find_value_stocks(pe_max=25, pb_max=2.5):
     df = get_full_market_data()
     if df.empty: return pd.DataFrame()
-    try:
-        pe_col = '市盈率' if '市盈率' in df.columns else '市盈率-动态'
-        pb_col = '市净率'
-        df[pe_col] = pd.to_numeric(df[pe_col], errors='coerce')
-        df[pb_col] = pd.to_numeric(df[pb_col], errors='coerce')
-        df['最新价'] = pd.to_numeric(df['最新价'], errors='coerce')
-        df['涨跌幅'] = pd.to_numeric(df['涨跌幅'], errors='coerce')
-        mask = (df[pe_col] > 0) & (df[pe_col] < pe_max) & (df[pb_col] > 0) & (df[pb_col] < pb_max)
-        filtered = df[mask].copy()
-        filtered['综合得分'] = (1 / filtered[pe_col]) + (1 / filtered[pb_col])
-        res = filtered.sort_values(by='综合得分', ascending=False).head(15)
-        return res[['代码', '名称', '最新价', '涨跌幅', pe_col, pb_col]].rename(columns={pe_col: 'PE', pb_col: 'PB'})
-    except Exception as e:
-        logger.warning(f"价值股筛选失败: {e}")
-        return pd.DataFrame()
+    
+    # 向量化过滤 (Pandas 已经很快，主要是后续逻辑提速)
+    pe_col = '市盈率' if '市盈率' in df.columns else '市盈率-动态'
+    pb_col = '市净率'
+    df[pe_col] = pd.to_numeric(df[pe_col], errors='coerce')
+    df[pb_col] = pd.to_numeric(df[pb_col], errors='coerce')
+    mask = (df[pe_col] > 0) & (df[pe_col] < pe_max) & (df[pb_col] > 0) & (df[pb_col] < pb_max)
+    filtered = df[mask].copy()
+    
+    # 这里已经是向量化操作，性能不错，主要加速在于 data feeding
+    filtered['综合得分'] = (1 / filtered[pe_col]) + (1 / filtered[pb_col])
+    res = filtered.sort_values(by='综合得分', ascending=False).head(15)
+    return res[['代码', '名称', '最新价', '涨跌幅', pe_col, pb_col]].rename(columns={pe_col: 'PE', pb_col: 'PB'})
+
+# 辅助函数用于并行映射 (如果需要更复杂的计算逻辑，目前 Pandas 是最快的)
+# 但如果有自定义特征提取，并行才有意义。目前的策略筛选主要是列运算，Pandas 已经是 C 层级加速。
+# 真正的分析加速点在 PredictiveAnalyzer 的特征预热。
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def find_momentum_stocks():
@@ -241,13 +244,42 @@ def find_growth_stocks():
         logger.warning(f"成长股筛选失败: {e}")
         return pd.DataFrame()
 
-def generate_ai_report(symbol, name, reports_df, signals):
-    try:
-        from core.ai_client import call_ai_for_stock_diagnosis
-        if not isinstance(reports_df, pd.DataFrame): reports_df = pd.DataFrame()
-        ai_analysis = call_ai_for_stock_diagnosis(symbol, name, reports_df, signals)
-        return f"### 🤖 AI 深度诊断 ({name})\n\n{ai_analysis}\n\n> **⚠️ AI 提示**：此报告由 Gemini 大模型实时推理生成，仅供参考。"
     except Exception as e: return f"AI 诊断模块加载失败: {e}"
+
+def generate_ai_report_stream(symbol, name, full_symbol):
+    """
+    流式生成 AI 报告，内部采用并发数据抓取提速，并注入内部量化评分
+    """
+    try:
+        from core.ai_client import call_ai_for_stock_diagnosis_stream
+        from pages.market import _get_quick_signals
+        
+        # 1. 并发抓取基本面与技术面数据
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            future_reports = executor.submit(get_stock_reports, symbol)
+            future_signals = executor.submit(get_trading_signals, full_symbol)
+            future_dna = executor.submit(_get_quick_signals, symbol)
+            
+            reports_df = future_reports.result()
+            signals = future_signals.result()
+            dna_data = future_dna.result()
+            
+        # 2. 传递 DNA 评分与标签到 AI (统一结论)
+        dna_score = dna_data.get('score', 0)
+        dna_tags = dna_data.get('tags', [])
+        
+        # 3. 调用流式 AI
+        yield from call_ai_for_stock_diagnosis_stream(symbol, name, reports_df, signals, dna_score, dna_tags)
+    except Exception as e:
+        yield f"AI 流式诊断模块加载失败: {e}"
+
+def generate_ai_report(symbol, name, full_symbol):
+    """同步阻塞获取报告 (用于后台任务或非流式场景)"""
+    gen = generate_ai_report_stream(symbol, name, full_symbol)
+    full_text = ""
+    for chunk in gen:
+        full_text += chunk
+    return full_text
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def get_stock_names_batch(codes):

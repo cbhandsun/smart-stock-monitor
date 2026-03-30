@@ -1,0 +1,164 @@
+/* SSM Quantum Pro v7.0 - Institutional Branding & Grid Suite */
+:root {
+  --sidebar-bg: #0f172a;
+  --main-bg: #020617;
+  --card-bg: rgba(30, 41, 59, 0.4);
+  --card-border: rgba(56, 189, 248, 0.1);
+  --accent: #38bdf8;
+  --up-color: #ef4444;
+  --down-color: #10b981;
+}
+
+.stApp {
+  background-color: var(--main-bg);
+}
+
+/* 信号卡片矩阵 (Signal Matrix Card) */
+.signal-card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 12px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+  overflow: hidden;
+}
+
+.signal-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(56, 189, 248, 0.4);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2);
+  background: rgba(30, 41, 59, 0.6);
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.card-title {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: #f8fafc;
+}
+
+.card-code {
+  font-size: 0.75rem;
+  color: #64748b;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.card-price-area {
+  text-align: right;
+}
+
+.card-price {
+  font-size: 1.15rem;
+  font-weight: 800;
+  font-family: 'JetBrains Mono', monospace;
+  color: #f8fafc;
+}
+
+.card-change {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* 估值分位丝带 (Valuation Ribbon) */
+.valuation-ribbon {
+  height: 4px;
+  width: 100%;
+  background: #334155;
+  border-radius: 2px;
+  margin-top: 4px;
+  position: relative;
+}
+
+.ribbon-bar {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.6s ease;
+}
+
+.ribbon-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.65rem;
+  color: #475569;
+  margin-bottom: 2px;
+}
+
+/* Pill 样式 */
+.status-pill {
+  font-size: 0.68rem;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+/* 头部指数条改进 */
+.market-bar {
+  display: flex;
+  gap: 15px;
+  padding: 8px 15px;
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: 8px;
+  overflow-x: auto;
+  white-space: nowrap;
+  margin-bottom: 20px;
+  border: 1px solid rgba(255,255,255,0.05);
+}
+
+/* DNA Analyzer Specifics */
+.dna-quote-card {
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.82);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 14px;
+  margin-bottom: 16px;
+}
+
+.dna-tech-box {
+  background: linear-gradient(145deg, rgba(30,41,59,0.7), rgba(15,23,42,0.8));
+  border: 1px solid rgba(56, 189, 248, 0.18);
+  border-radius: 14px;
+  padding: 20px;
+  height: 100%;
+}
+
+.dna-price-label {
+  color: #64748b;
+  font-size: 0.65rem;
+  margin-bottom: 2px;
+}
+
+.dna-price-val {
+  color: #f8fafc;
+  font-size: 0.88rem;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.analysis-tag {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(148, 163, 184, 0.08);
+    color: #94a3b8;
+    font-size: 0.65rem;
+    font-weight: 500;
+    border: 1px solid rgba(148, 163, 184, 0.15);
+    line-height: 1;
+    letter-spacing: 0.5px;
+    margin-right: 4px;
+    margin-bottom: 4px;
+}
+
+.analysis-tag:last-child {
+    margin-right: 0;
+}

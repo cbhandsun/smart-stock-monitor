@@ -13,6 +13,18 @@ except ImportError:
 CACHE_DIR = "data/cache"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
+def is_market_closed():
+    """判断当前是否为非交易时间 (简单判断: 周末或 9:30-15:00 以外)"""
+    from datetime import datetime
+    now = datetime.now()
+    if now.weekday() >= 5: # 周末
+        return True
+    # 转换为分钟 (9:30 = 570, 15:00 = 900)
+    current_min = now.hour * 60 + now.minute
+    if current_min < 570 or current_min > 910: # 稍微多跑10分钟以防收盘数据延迟
+        return True
+    return False
+
 # Redis L1 缓存
 try:
     from core.cache import RedisCache
@@ -43,6 +55,45 @@ def _save_to_cache(df, symbol, period):
         except Exception as e:
             print(f"Cache save error: {e}")
 
+def get_last_timestamp(symbol, period):
+    """获取缓存中最后一条数据的时间戳"""
+    cache_path = _get_cache_path(symbol, period)
+    if os.path.exists(cache_path):
+        try:
+            df = pd.read_pickle(cache_path)
+            if not df.empty:
+                return df['日期'].iloc[-1]
+        except:
+            pass
+    return None
+
+def merge_kline_data(old_df, new_df):
+    """合并新旧K线数据并去重"""
+    if old_df is None or old_df.empty:
+        return new_df
+    if new_df is None or new_df.empty:
+        return old_df
+    
+    combined = pd.concat([old_df, new_df])
+    # 确保日期列是字符串以一致比较，或确保格式一致
+    combined['日期'] = combined['日期'].astype(str)
+    combined = combined.drop_duplicates(subset=['日期'], keep='last')
+    combined = combined.sort_values('日期')
+    return combined.reset_index(drop=True)
+
+def _recalculate_indicators(df):
+    """为DataFrame重新计算常用技术指标"""
+    if df.empty: return df
+    try:
+        # 确保收盘价为数值
+        df['收盘'] = pd.to_numeric(df['收盘'], errors='coerce')
+        df['MA5'] = df['收盘'].rolling(window=5).mean()
+        df['MA20'] = df['收盘'].rolling(window=20).mean()
+        df['MA60'] = df['收盘'].rolling(window=60).mean()
+    except Exception as e:
+        print(f"Indicator calculation error: {e}")
+    return df
+
 # 代理处理
 for k in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'all_proxy', 'ALL_PROXY']:
     os.environ.pop(k, None)
@@ -71,9 +122,18 @@ def _fetch_kline_impl(symbol, period='daily', datalen=100):
     if not symbol.startswith(('sh', 'sz')):
         symbol = "sh" + symbol if symbol.startswith('6') else "sz" + symbol
 
-    # 对于周线和月线，使用专用函数
     if period in ['weekly', 'monthly']:
         return fetch_kline_weekly_monthly(symbol, period, datalen)
+
+    import datetime
+    now = datetime.datetime.now()
+    # 获取上一个交易日 (推测逻辑：如果是周六日，则为上周五；如果是平时16点前，则为昨天)
+    if now.weekday() >= 5: # 周六日
+        target_latest = (now - datetime.timedelta(days=now.weekday()-4)).strftime('%Y-%m-%d')
+    elif now.hour < 16: # 平时下午4点前
+        target_latest = (now - datetime.timedelta(days=1)).strftime('%Y-%m-%d')
+    else:
+        target_latest = now.strftime('%Y-%m-%d')
 
     # L1: Redis 热缓存
     redis_key = f"kline:{symbol}:{period}:{datalen}"
@@ -90,6 +150,24 @@ def _fetch_kline_impl(symbol, period='daily', datalen=100):
             if ts.available:
                 df = ts.get_daily(symbol, limit=max(datalen, 200))
                 if df is not None and not df.empty:
+                    # 校验 Tushare 数据是否足够新 (判定标准：最后日期必须 >= target_latest)
+                    last_dt = str(df['日期'].iloc[-1]).split(' ')[0]
+                    if last_dt < target_latest:
+                        print(f"Tushare data for {symbol} is stale ({last_dt} < {target_latest}). Attempting AkShare fallback...")
+                        try:
+                            import akshare as ak
+                            pure_code = symbol[2:] if symbol.startswith(('sh', 'sz')) else symbol
+                            # 补全从 stale 到 target 的断层
+                            start_patch = (pd.to_datetime(last_dt) + datetime.timedelta(days=1)).strftime('%Y%m%d')
+                            patch_df = ak.stock_zh_a_hist(symbol=pure_code, period='daily', start_date=start_patch)
+                            if not patch_df.empty:
+                                patch_df.rename(columns={'日期': '日期', '开盘': '开盘', '最高': '最高', '最低': '最低', '收盘': '收盘', '成交量': '成交量'}, inplace=True)
+                                df = merge_kline_data(df, patch_df)
+                                print(f"Successfully patched {symbol} with {len(patch_df)} days from AkShare.")
+                        except Exception as patch_e:
+                            print(f"AkShare patch failed: {patch_e}")
+                    
+                    df = _recalculate_indicators(df)
                     df['周期'] = period
                     _save_to_cache(df, symbol, period)
                     result = df.tail(datalen) if len(df) > datalen else df
@@ -100,12 +178,47 @@ def _fetch_kline_impl(symbol, period='daily', datalen=100):
             print(f"Tushare daily fallback: {e}")
 
     # L2: 文件缓存
-    cached_df = _load_from_cache(symbol, period)
+    cached_df = _load_from_cache(symbol, period, ttl_seconds=3600*24*7) # 这里的TTL增大，因为我们会增量更新
+    
+    # 检查是否需要同步 (只有当缓存的数据日期已经是最近的交易日时，才跳过同步)
+    last_date = get_last_timestamp(symbol, period)
+    
+    if is_market_closed() and last_date and str(last_date).split(' ')[0] >= target_latest:
+        if cached_df is not None and len(cached_df) >= datalen:
+            result = cached_df.tail(datalen)
+            if _redis:
+                _redis.set(redis_key, result, expire=300)
+            return result
+
+    # 尝试增量同步 (仅针对 Tushare 日线)
+    if period == 'daily' and last_date:
+        try:
+            from core.tushare_client import get_ts_client
+            ts = get_ts_client()
+            if ts.available:
+                import datetime
+                start_date = (pd.to_datetime(last_date) + datetime.timedelta(days=1)).strftime('%Y%m%d')
+                if start_date <= datetime.datetime.now().strftime('%Y%m%d'):
+                    new_df = ts.get_daily(symbol, start_date=start_date)
+                    if new_df is not None and not new_df.empty:
+                        new_df['周期'] = period
+                        full_df = merge_kline_data(cached_df, new_df)
+                        _save_to_cache(full_df, symbol, period)
+                        result = full_df.tail(datalen)
+                        if _redis:
+                            _redis.set(redis_key, result, expire=300)
+                        return result
+        except Exception as e:
+            print(f"Incremental sync error for {symbol}: {e}")
+
+    # Fallback: 无效缓存或无法增量，执行全量拉取
     if cached_df is not None and len(cached_df) >= datalen:
-        result = cached_df.tail(datalen)
-        if _redis:
-            _redis.set(redis_key, result, expire=300)
-        return result
+        # 如果缓存足够新 (10分钟内)，直接返回
+        if time.time() - os.path.getmtime(_get_cache_path(symbol, period)) < 600:
+            result = cached_df.tail(datalen)
+            if _redis:
+                _redis.set(redis_key, result, expire=300)
+            return result
 
     # Sina fallback (日线 + 分钟线)
     scale = TIME_PERIOD_MAP.get(period, 240)

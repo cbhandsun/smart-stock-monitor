@@ -5,17 +5,8 @@ services:
     ports:
       - "8502:8501"
     volumes:
-      - ./data:/app/data
-      - ./.env:/app/.env
-      - ./.streamlit:/app/.streamlit
-      - ./app.py:/app/app.py
-      - ./main.py:/app/main.py
-      - ./pages:/app/pages
-      - ./utils:/app/utils
-      - ./components:/app/components
-      - ./modules:/app/modules
-      - ./core:/app/core
-      - ./static:/app/static
+      - .:/app
+      - /app/venv # 保护容器内虚拟环境，防止被宿主机覆盖
     environment:
       - PYTHONUNBUFFERED=1
       - REDIS_HOST=redis
@@ -25,6 +16,8 @@ services:
       - PG_USER=ssm
       - PG_PASSWORD=ssm_secure_2026
       - PG_DATABASE=stock_data
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
     env_file:
       - .env
     depends_on:
@@ -74,6 +67,44 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+
+  worker:
+    build: .
+    container_name: ssm-worker
+    command: celery -A tasks.celery_config.celery_app worker --loglevel=info -c 4
+    volumes:
+      - .:/app
+      - /app/venv
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  beat:
+    build: .
+    container_name: ssm-beat
+    command: celery -A tasks.celery_config.celery_app beat --loglevel=info
+    volumes:
+      - .:/app
+      - /app/venv
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   redis_data:

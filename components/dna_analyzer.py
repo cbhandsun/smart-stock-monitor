@@ -3,7 +3,7 @@ import plotly.graph_objects as go
 import os
 import datetime
 
-from main import get_stock_names_batch, generate_ai_report
+from main import get_stock_names_batch, generate_ai_report, generate_ai_report_stream
 from modules.data_loader import fetch_kline, fetch_trading_signals, fetch_research_reports
 from pages import save_watchlist, load_cached_report, REPORT_DIR
 
@@ -11,105 +11,102 @@ from pages import save_watchlist, load_cached_report, REPORT_DIR
 try:
     from modules.fundamentals import get_financial_health_score
     from modules.quant import calculate_metrics, calculate_all_indicators
+    from modules.analysis.dna_engine import get_dna_score, generate_tech_analysis
     from utils.charts import create_candlestick_chart
     from utils.tv_charts import render_tv_chart
 except ImportError:
     get_financial_health_score = None
     calculate_metrics = None
     calculate_all_indicators = None
+    get_dna_score = None
+    generate_tech_analysis = None
     create_candlestick_chart = None
     render_tv_chart = None
 
 
 def _render_daily_info(full_symbol, stock_name):
-    """渲染当日基本信息面板 — Sina 实时行情 (Redis 缓存 30s)"""
+    """渲染当日基本信息面板 (Standardized v7.1)"""
     import requests
     try:
-        # Redis 单例
-        _rc = getattr(_render_daily_info, '_rc', None)
-        if _rc is None:
-            try:
-                from core.cache import RedisCache
-                _rc = RedisCache()
-                _render_daily_info._rc = _rc if _rc.ping() else None
-                _rc = _render_daily_info._rc
-            except Exception:
-                _render_daily_info._rc = False
-                _rc = None
-
+        from core.cache import RedisCache
+        _rc = RedisCache()
         cache_key = f"quote:daily:{full_symbol}"
-        quote = None
-        if _rc:
-            quote = _rc.get(cache_key)
+        quote = _rc.get(cache_key)
 
         if not quote:
             url = f"https://hq.sinajs.cn/list={full_symbol}"
             headers = {'Referer': 'https://finance.sina.com.cn/'}
             r = requests.get(url, headers=headers, timeout=5)
             raw = r.text.strip()
-            if '="' not in raw or raw.endswith('=""'):
-                return
+            if '="' not in raw or raw.endswith('=""'): return
             parts = raw.split('="')[1].strip('"').split(',')
-            if len(parts) < 32:
-                return
+            if len(parts) < 32: return
             quote = {
-                'name': parts[0],
+                'price': float(parts[3] or 0),
                 'open': float(parts[1] or 0),
                 'prev_close': float(parts[2] or 0),
-                'price': float(parts[3] or 0),
                 'high': float(parts[4] or 0),
                 'low': float(parts[5] or 0),
-                'volume': float(parts[8] or 0),
                 'amount': float(parts[9] or 0),
+                'volume': float(parts[8] or 0),
             }
             pc = quote['prev_close']
-            pr = quote['price']
-            if pc > 0 and pr > 0:
-                quote['change_pct'] = (pr - pc) / pc * 100
-                quote['change_amt'] = pr - pc
+            if pc > 0:
+                quote['change_pct'] = (quote['price'] - pc) / pc * 100
                 quote['amplitude'] = (quote['high'] - quote['low']) / pc * 100
-            else:
-                quote['change_pct'] = quote['change_amt'] = quote['amplitude'] = 0
-            if _rc:
-                _rc.set(cache_key, quote, expire=30)
+            _rc.set(cache_key, quote, expire=30)
 
-        # 渲染
         price = quote['price']
-        if price <= 0:
-            return
+        if price <= 0: return
         chg_pct = quote['change_pct']
-        chg_amt = quote['change_amt']
-        color = "#ef4444" if chg_pct >= 0 else "#10b981"
+        color = "var(--up-color)" if chg_pct >= 0 else "var(--down-color)"
         arrow = "▲" if chg_pct >= 0 else "▼"
-        vol_wan = quote['volume'] / 10000
-        amt_yi = quote['amount'] / 1e8
 
-        st.markdown(f'''<div style="
-            display:flex; align-items:center; gap:16px; padding:10px 16px;
-            background:rgba(30,41,59,0.4); backdrop-filter:blur(12px);
-            border:1px solid rgba(255,255,255,0.06); border-radius:12px; margin:6px 0 10px;
-            flex-wrap:wrap;">
-    <div style="display:flex; align-items:baseline; gap:8px;">
-        <span style="font-family:'Outfit',sans-serif; font-size:1.6rem; font-weight:700; color:{color};">¥{price:.2f}</span>
-        <span style="color:{color}; font-size:0.9rem; font-weight:600;">{arrow}{abs(chg_amt):.2f} ({chg_pct:+.2f}%)</span>
+        # Valuation Calculation
+        pe_pct, pb_pct = 50, 50
+        try:
+            from core.tushare_client import get_ts_client
+            ts = get_ts_client()
+            if ts.available:
+                db_data = ts.get_daily_basic(full_symbol.split('s')[-1])
+                if db_data is not None and not db_data.empty:
+                    pe_val = float(db_data.iloc[-1].get('pe', 0))
+                    pb_val = float(db_data.iloc[-1].get('pb', 0))
+                    pe_pct = min(100, max(5, int(pe_val * 2)))
+                    pb_pct = min(100, max(5, int(pb_val * 20)))
+        except: pass
+
+        pe_color = "var(--accent)" if pe_pct < 40 else ("#f59e0b" if pe_pct < 70 else "var(--up-color)")
+
+        html = f"""<div class="dna-quote-card">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div>
+            <div style="color:#64748b; font-size:0.7rem; margin-bottom:4px;">REAL-TIME QUOTE</div>
+            <div style="display:flex; align-items:baseline; gap:12px;">
+                <span style="font-family:'JetBrains Mono',sans-serif; font-size:2.2rem; font-weight:800; color:{color};">¥{price:.2f}</span>
+                <span style="color:{color}; font-size:1.1rem; font-weight:700;">{arrow}{abs(quote['price'] - quote['prev_close']):.2f} ({chg_pct:+.2f}%)</span>
+            </div>
+        </div>
+        <div style="text-align:right;">
+             <div style="color:#f8fafc; font-size:0.95rem; font-weight:700;">成交额 {quote['amount']/1e8:.2f}亿</div>
+             <div style="color:#64748b; font-size:0.75rem;">振幅 {quote['amplitude']:.2f}%</div>
+        </div>
     </div>
-    <div style="display:flex; gap:16px; margin-left:auto; flex-wrap:wrap;">
-        <div style="text-align:center;"><div style="color:#64748b; font-size:0.65rem;">开盘</div>
-            <div style="color:#e2e8f0; font-size:0.82rem; font-weight:500;">{quote["open"]:.2f}</div></div>
-        <div style="text-align:center;"><div style="color:#64748b; font-size:0.65rem;">最高</div>
-            <div style="color:#ef4444; font-size:0.82rem; font-weight:500;">{quote["high"]:.2f}</div></div>
-        <div style="text-align:center;"><div style="color:#64748b; font-size:0.65rem;">最低</div>
-            <div style="color:#10b981; font-size:0.82rem; font-weight:500;">{quote["low"]:.2f}</div></div>
-        <div style="text-align:center;"><div style="color:#64748b; font-size:0.65rem;">昨收</div>
-            <div style="color:#94a3b8; font-size:0.82rem; font-weight:500;">{quote["prev_close"]:.2f}</div></div>
-        <div style="text-align:center;"><div style="color:#64748b; font-size:0.65rem;">成交量</div>
-            <div style="color:#e2e8f0; font-size:0.82rem; font-weight:500;">{vol_wan:.1f}万手</div></div>
-        <div style="text-align:center;"><div style="color:#64748b; font-size:0.65rem;">成交额</div>
-            <div style="color:#e2e8f0; font-size:0.82rem; font-weight:500;">{amt_yi:.2f}亿</div></div>
-        <div style="text-align:center;"><div style="color:#64748b; font-size:0.65rem;">振幅</div>
-            <div style="color:#e2e8f0; font-size:0.82rem; font-weight:500;">{quote["amplitude"]:.2f}%</div></div>
+    <div style="margin-top:20px;">
+        <div class="ribbon-label"><span>💎 机构估值分位 (PE Ribbon)</span><span>风险权重: {pe_pct}%</span></div>
+        <div class="valuation-ribbon" style="height:6px; background:rgba(255,255,255,0.05);">
+            <div class="ribbon-bar" style="width:{pe_pct}%; background:{pe_color}; box-shadow: 0 0 10px {pe_color}66;"></div>
+        </div>
     </div>
-</div>''', unsafe_allow_html=True)
+    <div style="display:flex; gap:24px; margin-top:20px; padding-top:15px; border-top:1px solid rgba(255,255,255,0.05);">
+        <div><div class="dna-price-label">最高/最低</div><div class="dna-price-val">{quote['high']:.2f} / {quote['low']:.2f}</div></div>
+        <div><div class="dna-price-label">今开/昨收</div><div class="dna-price-val">{quote['open']:.2f} / {quote['prev_close']:.2f}</div></div>
+        <div><div class="dna-price-label">成交额</div><div class="dna-price-val">{quote['amount']/1e8:.2f} 亿</div></div>
+    </div>
+</div>"""
+        st.markdown(html, unsafe_allow_html=True)
+    except Exception as e:
+        st.error(f"Quote Redner Error: {e}")
     except Exception:
         pass
 
@@ -152,326 +149,43 @@ def _create_indicator_chart(data, name, theme="dark"):
 
 
 def _render_tech_observation(kline, q_metrics, stock_name, stock_code):
-    """渲染深度技术分析面板：K线形态 + 技术指标 + 买点评估"""
-    import pandas as pd
-    import re
+    """渲染深度技术分析面板 (Cleaned v7.2)"""
+    if generate_tech_analysis is None: return
+    
+    k_analysis, indicators, score, levels, advice = generate_tech_analysis(kline, q_metrics)
+    
+    def _to_html(items):
+        return "".join([f'<div style="margin-bottom:6px; color:#cbd5e1;">• {item}</div>' for item in items])
 
-    if kline is None or kline.empty or len(kline) < 3:
-        return
-
-    def _b(text):
-        """markdown bold → HTML strong"""
-        return re.sub(r'\*\*(.+?)\*\*', r'<strong style="color:#f1f5f9">\1</strong>', text)
-
-    def _item(text):
-        return f'<div style="padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.03);">• {_b(text)}</div>'
-
-    latest = kline.iloc[-1]
-    prev = kline.iloc[-2]
-
-    close_p = float(latest.get('收盘', 0))
-    open_p = float(latest.get('开盘', 0))
-    high_p = float(latest.get('最高', 0))
-    low_p = float(latest.get('最低', 0))
-    volume = float(latest.get('成交量', 0))
-    prev_close = float(prev.get('收盘', 0))
-    prev_volume = float(prev.get('成交量', 1))
-
-    # =============================================
-    # 1. K线形态分析 (多日趋势)
-    # =============================================
-    kline_analysis = []
-
-    # 近N日高低点分析
-    n_days = min(len(kline), 10)
-    recent = kline.tail(n_days)
-    recent_high = float(recent['最高'].max())
-    recent_low = float(recent['最低'].min())
-    high_date = recent.loc[recent['最高'].idxmax()].get('日期', '')
-    low_date = recent.loc[recent['最低'].idxmin()].get('日期', '')
-
-    day_change = (close_p - prev_close) / prev_close * 100 if prev_close > 0 else 0
-
-    # 从高点回落 or 从低点反弹
-    if recent_high > 0 and close_p < recent_high:
-        drop_from_high = (recent_high - close_p) / recent_high * 100
-        if drop_from_high > 3:
-            h_str = str(high_date)[:10] if high_date else ''
-            l_str = str(low_date)[:10] if low_date else ''
-            kline_analysis.append(
-                f"从{h_str}高点 **¥{recent_high:.2f}** 跌至 ¥{recent_low:.2f}，"
-                f"形成缩量调整")
-
-    # 今日走势关键判断
-    if day_change > 3:
-        kline_analysis.append(f"今日出现 **大幅反弹（+{day_change:.2f}%）**，疑似主力资金介入")
-    elif day_change > 1:
-        kline_analysis.append(f"今日温和上涨 **+{day_change:.2f}%**，走势偏强")
-    elif day_change < -3:
-        kline_analysis.append(f"今日 **大幅下挫（{day_change:.2f}%）**，需警惕破位风险")
-    elif day_change < -1:
-        kline_analysis.append(f"今日回调 **{day_change:.2f}%**，短线承压")
-    else:
-        kline_analysis.append(f"今日窄幅震荡（{day_change:+.2f}%），多空分歧不大")
-
-    # 量能分析
-    if prev_volume > 0:
-        vol_ratio = volume / prev_volume
-        if vol_ratio > 2.0:
-            kline_analysis.append(f"量能 **显著放大**（前日 {vol_ratio:.1f} 倍），资金加速流入 🔥")
-        elif vol_ratio > 1.3 and day_change > 0:
-            kline_analysis.append(f"**量价齐升**（量比 {vol_ratio:.1f}），上涨动力充足")
-        elif vol_ratio > 1.3 and day_change < 0:
-            kline_analysis.append(f"放量下跌（量比 {vol_ratio:.1f}），存在 **资金出逃** 迹象")
-        elif vol_ratio < 0.6:
-            kline_analysis.append("成交量 **大幅萎缩**，市场观望情绪浓厚")
-        else:
-            kline_analysis.append("量能配合度需进一步确认")
-
-    # 连涨/连跌判断
-    streak = 0
-    for i in range(len(kline) - 1, max(len(kline) - 6, 0), -1):
-        c = float(kline.iloc[i].get('收盘', 0))
-        p = float(kline.iloc[i-1].get('收盘', 0)) if i > 0 else c
-        if c > p:
-            if streak >= 0:
-                streak += 1
-            else:
-                break
-        elif c < p:
-            if streak <= 0:
-                streak -= 1
-            else:
-                break
-        else:
-            break
-
-    if streak >= 3:
-        kline_analysis.append(f"已 **连涨 {streak} 日** 📈，短线注意追高风险")
-    elif streak <= -3:
-        kline_analysis.append(f"已 **连跌 {abs(streak)} 日** 📉，超跌反弹概率增大")
-
-    # K线形态判断
-    if close_p > 0 and open_p > 0:
-        body = abs(close_p - open_p)
-        upper_shadow = high_p - max(close_p, open_p)
-        lower_shadow = min(close_p, open_p) - low_p
-        if lower_shadow > body * 2 and upper_shadow < body * 0.5:
-            kline_analysis.append("出现 **长下影线**，下方有较强支撑买盘")
-        elif upper_shadow > body * 2 and lower_shadow < body * 0.5:
-            kline_analysis.append("出现 **长上影线**，上方抛压较重")
-        elif body < (high_p - low_p) * 0.1 and high_p - low_p > 0:
-            kline_analysis.append("出现 **十字星** 形态，可能为变盘信号")
-
-    # =============================================
-    # 2. 技术指标研判
-    # =============================================
-    indicators = []
-    rsi = q_metrics.get('rsi', 50)
-    kdj_k = q_metrics.get('kdj_k', 50)
-    kdj_d = q_metrics.get('kdj_d', 50)
-    bb_percent = q_metrics.get('bb_percent', 50)
-    dmi_adx = q_metrics.get('dmi_adx', 25)
-    ma5 = latest.get('MA5', None)
-    ma20 = latest.get('MA20', None)
-
-    if rsi > 70:
-        indicators.append(f"RSI **超买**（{rsi:.1f}），获利了结压力大")
-    elif rsi < 30:
-        indicators.append(f"RSI **超卖**（{rsi:.1f}），反弹概率增大")
-    elif 45 < rsi < 55:
-        indicators.append(f"RSI 中性（{rsi:.1f}），方向不明确")
-    else:
-        indicators.append(f"RSI {rsi:.1f}，{'偏强' if rsi > 55 else '偏弱'}")
-
-    if kdj_k > kdj_d and kdj_k < 40:
-        indicators.append("KDJ **低位金叉** 🟢，反弹动能积聚")
-    elif kdj_k < kdj_d and kdj_k > 60:
-        indicators.append("KDJ **高位死叉** 🔴，回调风险加大")
-    elif kdj_k > 80:
-        indicators.append("KDJ 进入超买区，警惕回落")
-
-    if bb_percent > 85:
-        indicators.append("触及 **布林上轨**，超涨风险高")
-    elif bb_percent < 15:
-        indicators.append("触及 **布林下轨**，超跌信号")
-
-    if dmi_adx > 40:
-        indicators.append(f"ADX {dmi_adx:.0f} → **强趋势**，顺势操作")
-    elif dmi_adx < 20:
-        indicators.append(f"ADX {dmi_adx:.0f} → **震荡行情**，区间操作")
-
-    if pd.notna(ma5) and pd.notna(ma20):
-        if close_p > float(ma5) > float(ma20):
-            indicators.append("均线 **多头排列** 📈 (价格>MA5>MA20)")
-        elif close_p < float(ma5) < float(ma20):
-            indicators.append("均线 **空头排列** 📉 (价格<MA5<MA20)")
-
-    # =============================================
-    # 3. 买点评估（综合研判）
-    # =============================================
-    score = 0  # -10 ~ +10
-    buy_reasons = []
-    sell_reasons = []
-
-    # RSI 信号
-    if rsi < 30:
-        score += 3
-        buy_reasons.append("RSI 超卖区，反弹概率较高")
-    elif rsi > 70:
-        score -= 3
-        sell_reasons.append("RSI 超买区，注意获利了结")
-
-    # KDJ 信号
-    if kdj_k > kdj_d and kdj_k < 40:
-        score += 2
-        buy_reasons.append("KDJ 低位金叉确认")
-    elif kdj_k < kdj_d and kdj_k > 60:
-        score -= 2
-        sell_reasons.append("KDJ 高位死叉警告")
-
-    # 量价配合
-    if prev_volume > 0:
-        vol_ratio = volume / prev_volume
-        if vol_ratio > 1.3 and day_change > 0:
-            score += 2
-            buy_reasons.append("量价齐升，动力充足")
-        elif vol_ratio > 1.3 and day_change < -2:
-            score -= 2
-            sell_reasons.append("放量下跌，资金出逃")
-
-    # 布林位置
-    if bb_percent < 15:
-        score += 1
-        buy_reasons.append("触及布林下轨，超跌反弹概率大")
-    elif bb_percent > 85:
-        score -= 1
-        sell_reasons.append("触及布林上轨，追高风险高")
-
-    # 均线
-    if pd.notna(ma5) and pd.notna(ma20):
-        if close_p > float(ma5) > float(ma20):
-            score += 1
-        elif close_p < float(ma5) < float(ma20):
-            score -= 1
-
-    # K线形态
-    if close_p > 0 and open_p > 0:
-        lower_shadow = min(close_p, open_p) - low_p
-        body = abs(close_p - open_p)
-        if lower_shadow > body * 2:
-            score += 1
-            buy_reasons.append("长下影线，下方有支撑")
-
-    # 趋势
-    if day_change > 3:
-        score += 1
-        buy_reasons.append(f"今日放量拉升，可能形成\"尾盘抢筹\"格局")
-    elif day_change < -3:
-        score -= 1
-        sell_reasons.append("大幅下跌，短期止损观望")
-
-    # 综合评级
-    if score >= 3:
-        signal_icon = "⚡"
-        signal_text = "重点关注"
-        signal_color = "#f59e0b"
-        action_items = buy_reasons
-        action_intro = "看多信号"
-    elif score <= -3:
-        signal_icon = "⛔"
-        signal_text = "风险警示"
-        signal_color = "#ef4444"
-        action_items = sell_reasons
-        action_intro = "风险信号"
-    else:
-        signal_icon = "⏳"
-        signal_text = "观望等待"
-        signal_color = "#94a3b8"
-        action_items = buy_reasons + sell_reasons if buy_reasons or sell_reasons else ["多空力量均衡，等待方向明确"]
-        action_intro = "中性信号"
-
-    # 关键价位
-    price_levels = []
-    if pd.notna(ma5):
-        price_levels.append(f"MA5 ¥{float(ma5):.2f}")
-    if pd.notna(ma20):
-        price_levels.append(f"MA20 ¥{float(ma20):.2f}")
-
-    # 整数关口
-    if close_p > 10:
-        round_above = (int(close_p / 10) + 1) * 10
-        round_below = int(close_p / 10) * 10
-        if round_above - close_p < close_p * 0.05:
-            price_levels.append(f"关注 **¥{round_above}** 整数关口突破")
-        if close_p - round_below < close_p * 0.03:
-            price_levels.append(f"关注 **¥{round_below}** 整数支撑")
-
-    # =============================================
-    # 渲染
-    # =============================================
-    kline_html = "".join([_item(t) for t in kline_analysis])
-    indicator_html = "".join([_item(t) for t in indicators])
-    action_html = "".join([_item(t) for t in action_items])
-    price_html = "".join([_item(t) for t in price_levels]) if price_levels else ""
-
-    # 构建关键价位 HTML（单独处理，避免 f-string 嵌套引号问题）
-    price_section = ""
-    if price_html:
-        price_section = (
-            '<div style="margin-top: 12px; padding-top: 10px; '
-            'border-top: 1px solid rgba(255,255,255,0.06);">'
-            '<div style="font-size: 0.85rem; font-weight: 600; '
-            'color: #94a3b8; margin-bottom: 6px;">关键价位：</div>'
-            '<div style="color: #cbd5e1; font-size: 0.82rem; '
-            f'line-height: 1.7;">{price_html}</div></div>'
-        )
-
-    # 根据评分确定边框颜色
-    if score <= -3:
-        border_rgb = "239,68,68"
-    elif score >= 3:
-        border_rgb = "245,158,11"
-    else:
-        border_rgb = "148,163,184"
-
-    col1, col2 = st.columns(2)
-
-    # 左列：K线形态 + 技术指标
-    with col1:
-        left_html = (
-            '<div style="background: linear-gradient(145deg, rgba(30,41,59,0.6), rgba(15,23,42,0.7));'
-            ' border: 1px solid rgba(56,189,248,0.15); border-radius: 14px; padding: 20px;">'
-            '<div style="font-size: 0.95rem; font-weight: 700; color: #f1f5f9;'
-            ' margin-bottom: 12px;">K线形态分析：</div>'
-            f'<div style="color: #cbd5e1; font-size: 0.82rem; line-height: 1.7;">{kline_html}</div>'
-            '<div style="font-size: 0.95rem; font-weight: 700; color: #f1f5f9;'
-            ' margin-top: 16px; margin-bottom: 10px; padding-top: 12px;'
-            ' border-top: 1px solid rgba(255,255,255,0.06);">技术指标研判：</div>'
-            f'<div style="color: #cbd5e1; font-size: 0.82rem; line-height: 1.7;">{indicator_html}</div>'
-            '</div>'
-        )
-        st.markdown(left_html, unsafe_allow_html=True)
-
-    # 右列：买点评估
-    with col2:
-        right_html = (
-            f'<div style="background: linear-gradient(145deg, rgba(30,41,59,0.6), rgba(15,23,42,0.7));'
-            f' border: 1px solid rgba({border_rgb},0.25);'
-            f' border-left: 4px solid {signal_color}; border-radius: 14px; padding: 20px;">'
-            f'<div style="font-size: 0.95rem; font-weight: 700; color: #f1f5f9; margin-bottom: 6px;">'
-            f'买点评估：<span style="color: {signal_color}; margin-left: 8px;'
-            f' font-size: 1rem;">{signal_icon} {signal_text}</span></div>'
-            f'<div style="font-size: 0.75rem; color: #64748b; margin-bottom: 12px;">'
-            f'综合得分 {score:+d} | {action_intro}</div>'
-            f'<div style="color: #cbd5e1; font-size: 0.82rem; line-height: 1.7;">{action_html}</div>'
-            f'{price_section}'
-            '<div style="color: #64748b; font-size: 0.68rem; margin-top: 14px;'
-            ' padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05);">'
-            '⚠️ 算法自动生成，仅供参考，不构成投资建议</div>'
-            '</div>'
-        )
-        st.markdown(right_html, unsafe_allow_html=True)
+    signal_color = "#10b981" if score >= 3 else ("#ef4444" if score <= -3 else "#f59e0b")
+    signal_text = "核心看多" if score >= 3 else ("风险警示" if score <= -3 else "中性观望")
+    
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown(f"""<div class="dna-tech-box">
+<div style="font-weight:800; color:#f8fafc; margin-bottom:15px; font-size:1.1rem;">🔬 技术形态扫描</div>
+{_to_html(k_analysis)}
+<div style="margin-top:20px; padding-top:15px; border-top:1px solid rgba(255,255,255,0.05);">
+<div style="font-weight:700; color:#94a3b8; margin-bottom:10px;">📉 指标研判</div>
+{_to_html(indicators)}
+</div>
+</div>""", unsafe_allow_html=True)
+    
+    with c2:
+        st.markdown(f"""<div class="dna-tech-box" style="border-left: 4px solid {signal_color};">
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+<span style="font-weight:800; color:#f8fafc; font-size:1.1rem;">🎯 决策建议</span>
+<span class="status-pill" style="background:{signal_color}22; color:{signal_color}; padding:4px 10px;">{signal_text}</span>
+</div>
+<div style="font-size:2.5rem; font-weight:800; color:{signal_color}; text-align:center; margin:15px 0;">{score:+=d}</div>
+<div style="background:rgba(255,255,255,0.03); border-radius:8px; padding:12px; margin-bottom:20px;">
+<div style="color:#e2e8f0; font-size:0.95rem; line-height:1.5;">{advice}</div>
+</div>
+<div style="margin-top:20px; padding-top:15px; border-top:1px solid rgba(255,255,255,0.05);">
+<div style="font-weight:700; color:#94a3b8; margin-bottom:10px;">📍 关键价位</div>
+{_to_html(levels)}
+</div>
+</div>""", unsafe_allow_html=True)
 
 
 
@@ -492,28 +206,20 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
     else:
         my_stocks_dropdown = my_stocks
 
-    hdr_col, sel_col, refresh_col = st.columns([2, 3, 1])
+    hdr_col, sel_col, refresh_col = st.columns([3, 2, 1])
     with hdr_col:
-        st.markdown(f"### {L.get('dna_analysis', '🧬 深度决策中心')}")
+        st.markdown(f"### <span style='color:var(--accent); font-family:Outfit;'>DNA</span> {L.get('dna_analysis', '深度决策中心')}", unsafe_allow_html=True)
     with sel_col:
         sel_stock = st.selectbox(
             "标的", my_stocks_dropdown,
             index=my_stocks_dropdown.index(target) if target in my_stocks_dropdown else 0,
             format_func=lambda x: f"{x} {name_map.get(x, '')}",
-            label_visibility="collapsed"
+            label_visibility="collapsed",
+            key=f"PRO_SSM_V7_DNA_selector"
         )
         st.session_state['selected_stock'] = sel_stock
     with refresh_col:
-        if st.button("🔄", key=f"refresh_{id(render_dna_analyzer)}", use_container_width=True, help="刷新当前标的"):
-            # 仅清除当前股票相关缓存, 不清全局
-            try:
-                from core.cache import RedisCache
-                _rc = RedisCache()
-                if _rc.ping():
-                    for pattern in [f"kline:{sel_stock}*", f"strat:*{sel_stock}*"]:
-                        _rc.delete(pattern)
-            except Exception:
-                pass
+        if st.button("🔄", key=f"PRO_SSM_V7_DNA_refresh", use_container_width=True, help="刷新当前标的"):
             st.cache_data.clear()
             st.toast(f"📊 {sel_stock} 数据已刷新", icon="✨")
             st.rerun()
@@ -534,6 +240,16 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
     f_data = get_financial_health_score(sel_stock) if get_financial_health_score else None
     q_metrics = calculate_metrics(kline) if calculate_metrics else {}
 
+    # 获取高级指标 (10000 积分尊享)
+    db_data = None
+    try:
+        from core.tushare_client import get_ts_client
+        ts = get_ts_client()
+        if ts.available:
+            db_data = ts.get_daily_basic(sel_stock)
+    except Exception:
+        pass
+
     # ========== 七大 Tab ==========
     tab_chart, tab_tech, tab_fund, tab_dragon, tab_finance, tab_ai, tab_profile = st.tabs(
         ["📊 走势", "🔬 技术", "💰 资金", "🐉 龙虎", "📈 财务", "🤖 AI", "🏢 简介"])
@@ -541,25 +257,26 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
     # -------- Tab 1: 行情走势 --------
     with tab_chart:
         # 时间周期选择器 (紧凑行内)
+        # 时间周期选择器 (Quantum Pills)
         period_cols = st.columns(8)
         periods = ['1min', '5min', '15min', '30min', '60min', 'daily', 'weekly', 'monthly']
         period_labels = ['1分', '5分', '15分', '30分', '60分', '日线', '周线', '月线']
 
         for i, (period, label) in enumerate(zip(periods, period_labels)):
             with period_cols[i]:
-                if st.button(label, key=f"period_{period}_{id(render_dna_analyzer)}",
+                if st.button(label, key=f"PRO_SSM_V7_DNA_period_{period}",
                             type="primary" if st.session_state['selected_period'] == period else "secondary",
                             use_container_width=True):
                     st.session_state['selected_period'] = period
                     st.rerun()
 
-        # 均线叠加选择 (紧凑)
+        # 均线叠加选择 (Quantum Pills)
         ind_cols = st.columns(6)
         available_indicators = {'MA': '均线', 'BB': '布林带', 'MACD': 'MACD', 'KDJ': 'KDJ', 'RSI': 'RSI', 'CCI': 'CCI'}
         for i, (key, label) in enumerate(available_indicators.items()):
             with ind_cols[i]:
                 is_selected = key in st.session_state['selected_indicators']
-                if st.button(label, key=f"ind_{key}_{id(render_dna_analyzer)}",
+                if st.button(label, key=f"PRO_SSM_V7_DNA_ind_{key}",
                             type="primary" if is_selected else "secondary",
                             use_container_width=True):
                     if is_selected:
@@ -605,35 +322,81 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
 
     # -------- Tab 2: 技术分析 --------
     with tab_tech:
-        # 核心指标卡片 (3列更宽敞)
+        # 核心指标卡片 - 第一排：财务与分担
         r1c1, r1c2, r1c3 = st.columns(3)
         fin_score = f_data.get('score', 50) if f_data else 50
         fin_source = f_data.get('source', '') if f_data else ''
         r1c1.metric(L.get('fin_health', '财务健康分'), f"{fin_score}%", delta=fin_source if fin_source else None, delta_color="off")
-        r1c2.metric("RSI(14)", f"{q_metrics.get('rsi', 0):.1f}")
-        r1c3.metric(L.get('ann_vol', '年化波动率'), f"{q_metrics.get('volatility_ann', 0):.1f}%")
+        
+        # 估值核心 (10000 积分尊享数据)
+        pe_val = "N/A"
+        pb_val = "N/A"
+        if db_data is not None and not db_data.empty:
+            latest_v = db_data.iloc[-1]
+            try:
+                pe_raw = latest_v.get('pe') or latest_v.get('pe_ttm') or 0
+                pb_raw = latest_v.get('pb') or 0
+                pe_val = f"{float(pe_raw):.2f}"
+                pb_val = f"{float(pb_raw):.2f}"
+            except (ValueError, TypeError):
+                pass
+            
+        r1c2.metric("市盈率 (PE/TTM)", pe_val, help="基于 Tushare Pro 实时同步")
+        r1c3.metric("市净率 (PB)", pb_val)
 
+        # 核心指标卡片 - 第二排：技术形态
         r2c1, r2c2, r2c3 = st.columns(3)
-        bb_width = q_metrics.get('bb_width', 0)
-        bb_pos = "中轨附近"
-        if q_metrics.get('bb_percent', 50) > 80:
-            bb_pos = "上轨附近⚠️"
-        elif q_metrics.get('bb_percent', 50) < 20:
-            bb_pos = "下轨附近💡"
-        r2c1.metric("布林带", f"{bb_width:.1f}%", delta=bb_pos, delta_color="off")
-
-        kdj_k = q_metrics.get('kdj_k', 50)
-        kdj_d = q_metrics.get('kdj_d', 50)
-        kdj_signal = "金叉" if kdj_k > kdj_d and kdj_k < 50 else "死叉" if kdj_k < kdj_d else "整理"
-        r2c2.metric(f"KDJ(K:{kdj_k:.1f})", f"D:{kdj_d:.1f}", delta=kdj_signal,
-                  delta_color="normal" if kdj_signal == "金叉" else "inverse")
-
-        dmi_adx = q_metrics.get('dmi_adx', 0)
-        adx_strength = "强趋势" if dmi_adx > 40 else "弱趋势" if dmi_adx < 20 else "震荡"
-        r2c3.metric(f"ADX({dmi_adx:.1f})", adx_strength)
+        rsi_val = q_metrics.get('rsi', 0) or 0
+        r2c1.metric("RSI(14)", f"{float(rsi_val):.1f}")
+        
+        vol_ann = q_metrics.get('volatility_ann', 0) or 0
+        r2c2.metric(L.get('ann_vol', '年化波动率'), f"{float(vol_ann):.1f}%")
+        
+        dmi_adx = q_metrics.get('dmi_adx', 0) or 0
+        adx_f = float(dmi_adx)
+        adx_strength = "强趋势" if adx_f > 40 else "弱趋势" if adx_f < 20 else "震荡"
+        r2c3.metric(f"ADX({adx_f:.1f})", adx_strength)
 
         if f_data and f_data.get('analysis'):
             st.caption(f"📊 {f_data['analysis']}")
+
+        if st.button(L.get('invoke_ai', '启动多模态 AI 研判'), key=f"PRO_SSM_V7_DNA_invoke_ai", type="primary", use_container_width=True):
+            with st.spinner("🧠 AI 正在分析市场数据..."):
+                # 改为流式直连展示，并捕获结果用于保存
+                rep = st.write_stream(generate_ai_report_stream(sel_stock, name_map.get(sel_stock, ''), full_symbol))
+                st.success("✅ 分析完成！")
+                
+                os.makedirs(f"{REPORT_DIR}/{datetime.datetime.now().strftime('%Y-%m-%d')}", exist_ok=True)
+                with open(f"{REPORT_DIR}/{datetime.datetime.now().strftime('%Y-%m-%d')}/{sel_stock}.md", "w") as f:
+                    f.write(rep)
+                st.toast("报告已保存", icon="📁")
+
+        # ---- 估值丝带 (10000 积分看板) ----
+        if db_data is not None and not db_data.empty:
+            st.divider()
+            st.markdown("##### 💎 历史估值偏离度 (PE/PB Ribbon)")
+            db_sorted = db_data.sort_values('trade_date')
+            dates = db_sorted['trade_date'].astype(str)
+            
+            v_col1, v_col2 = st.columns(2)
+            with v_col1:
+                fig_pe = go.Figure()
+                fig_pe.add_trace(go.Scatter(
+                    x=dates, y=db_sorted['pe'], name='PE(TTM)',
+                    line=dict(color='#38bdf8', width=2),
+                    fill='tozeroy', fillcolor='rgba(56,189,248,0.05)'
+                ))
+                fig_pe.update_layout(template='plotly_dark', height=250, margin=dict(l=0,r=0,t=20,b=0), yaxis_title="PE")
+                st.plotly_chart(fig_pe, use_container_width=True, key=f"pe_{sel_stock}")
+            with v_col2:
+                fig_pb = go.Figure()
+                fig_pb.add_trace(go.Scatter(
+                    x=dates, y=db_sorted['pb'], name='PB',
+                    line=dict(color='#f59e0b', width=2),
+                    fill='tozeroy', fillcolor='rgba(245,158,11,0.05)'
+                ))
+                fig_pb.update_layout(template='plotly_dark', height=250, margin=dict(l=0,r=0,t=20,b=0), yaxis_title="PB")
+                st.plotly_chart(fig_pb, use_container_width=True, key=f"pb_{sel_stock}")
 
         # 行情快照
         st.divider()
@@ -661,12 +424,9 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
 
         if st.button(L.get('invoke_ai', '启动多模态 AI 研判'), key=f"invoke_ai_{id(render_dna_analyzer)}", type="primary", use_container_width=True):
             with st.spinner("🧠 AI 正在分析市场数据..."):
-                rep = generate_ai_report(sel_stock, name_map.get(sel_stock, ''),
-                                        fetch_research_reports(sel_stock),
-                                        fetch_trading_signals(full_symbol))
-
+                # 改为流式直连展示，并捕获结果用于保存
+                rep = st.write_stream(generate_ai_report_stream(sel_stock, name_map.get(sel_stock, ''), full_symbol))
                 st.success("✅ 分析完成！")
-                st.markdown(f"<div class='ai-box'>{rep}</div>", unsafe_allow_html=True)
 
                 os.makedirs(f"{REPORT_DIR}/{datetime.datetime.now().strftime('%Y-%m-%d')}", exist_ok=True)
                 with open(f"{REPORT_DIR}/{datetime.datetime.now().strftime('%Y-%m-%d')}/{sel_stock}.md", "w") as f:
@@ -798,6 +558,41 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
                         st.caption(f"最新股东人数: {latest_hn/10000:.2f}万 | 变化: {change_hn/10000:+.2f}万 {'(筹码集中)' if change_hn < 0 else '(筹码分散)'}")
                 else:
                     st.info("暂无股东人数数据")
+
+                # ---- 回购与调研 (10000 积分尊享) ----
+                st.divider()
+                st.markdown("##### 🚀 机构调研 & 股份回购 (Alpha Signals)")
+                alpha_c1, alpha_c2 = st.columns(2)
+                
+                with alpha_c1:
+                    st.markdown("🏢 **股份回购记录**")
+                    rep = ts.get_repurchase(sel_stock)
+                    if rep is not None and not rep.empty:
+                        for _, row in rep.head(3).iterrows():
+                            st.markdown(f"""
+                            <div style="background:rgba(239,68,68,0.05); border-left:3px solid #ef4444; padding:8px 12px; margin-bottom:8px; border-radius:4px;">
+                                <div style="font-size:0.8rem; color:#94a3b8">{row['ann_date']}</div>
+                                <div style="font-size:0.9rem; color:#ef4444; font-weight:600;">回购金额: {row['vol']:.2f} 万/股</div>
+                                <div style="font-size:0.75rem; color:#64748b">回购区间: {row['low_limit']}-{row['high_limit']}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                    else:
+                        st.caption("近期无回购记录")
+
+                with alpha_c2:
+                    st.markdown("🔍 **调研活动**")
+                    surv = ts.get_stk_surv(sel_stock)
+                    if surv is not None and not surv.empty:
+                        for _, row in surv.head(3).iterrows():
+                            st.markdown(f"""
+                            <div style="background:rgba(56,189,248,0.05); border-left:3px solid #38bdf8; padding:8px 12px; margin-bottom:8px; border-radius:4px;">
+                                <div style="font-size:0.8rem; color:#94a3b8">{row['ann_date']}</div>
+                                <div style="font-size:0.9rem; color:#e2e8f0; font-weight:600;">调研机构: {row['org_name'][:15]}...</div>
+                                <div style="font-size:0.75rem; color:#64748b">类型: {row['surv_type'] or '实地'}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                    else:
+                        st.caption("近期无调研活动")
         except Exception as e:
             st.error(f"资金面数据加载失败: {e}")
 

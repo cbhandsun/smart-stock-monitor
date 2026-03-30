@@ -33,7 +33,7 @@ def render(L):
 
     with tab1:
         if portfolios:
-            for portfolio in portfolios:
+            for idx, portfolio in enumerate(portfolios):
                 with st.expander(f"📂 {portfolio.name} ({len(portfolio.stocks)} 只股票)", expanded=False):
                     # 描述
                     if portfolio.description:
@@ -66,7 +66,7 @@ def render(L):
                     # 操作按钮行
                     btn_col1, btn_col2, btn_col3 = st.columns([2, 1, 1])
                     with btn_col1:
-                        nav_to_page('market', '前往选股', icon='📡')
+                        nav_to_page('market', '前往选股', icon='📡', key_suffix=f"{getattr(portfolio, 'id', idx)}_{idx}")
                     with btn_col2:
                         st.empty()  # spacer
                     with btn_col3:

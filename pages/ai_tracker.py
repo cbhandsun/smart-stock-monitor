@@ -107,7 +107,7 @@ def render(L, my_stocks, name_map):
         with tabs[i]:
             st.markdown(f"<p style='color: #94a3b8; font-size: 0.95rem; line-height: 1.6;'>{p.description}</p>", unsafe_allow_html=True)
             
-            symbols = [s['symbol'] for s in p.stocks]
+            symbols = [s.symbol for s in p.stocks]
             if not symbols:
                 st.info("此板块暂无监控标的。")
                 continue
@@ -119,7 +119,7 @@ def render(L, my_stocks, name_map):
             # Build DataFrame for Display
             table_data = []
             for stock in p.stocks:
-                sym = stock['symbol']
+                sym = stock.symbol
                 q_data = live_quotes.get(sym, {})
                 
                 price = float(q_data.get("最新价", 0.0))
@@ -130,7 +130,7 @@ def render(L, my_stocks, name_map):
                 table_data.append({
                     "📌": False,
                     "代码": sym,
-                    "名称": name_map.get(sym, stock['name']),
+                    "名称": name_map.get(sym, stock.name),
                     "最新价": price,
                     "涨跌幅": pct,
                     "换手率": turnover,

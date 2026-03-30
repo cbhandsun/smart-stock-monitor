@@ -148,8 +148,24 @@ class TushareClient:
         try:
             from core.database import read_kline, write_kline
             pg_df = read_kline(ts_code, 'kline_daily', limit * 2)
+            
+            # 增加实效性核验: 即使条数够，如果最后日期落后，也判定为陈旧
             if pg_df is not None and len(pg_df) >= limit:
-                return self._format_kline(pg_df, limit)
+                # 获取上一个交易日目标 (周六日 -> 周五; 平日16点后 -> 今天; 16点前 -> 昨天)
+                now = datetime.now()
+                if now.weekday() >= 5: # 周六日
+                    target_latest = (now - timedelta(days=now.weekday()-4)).strftime('%Y-%m-%d')
+                elif now.hour < 16:
+                    target_latest = (now - timedelta(days=1)).strftime('%Y-%m-%d')
+                else:
+                    target_latest = now.strftime('%Y-%m-%d')
+
+                latest_pg_date = str(pg_df['trade_date'].iloc[-1]).split(' ')[0]
+                # Tushare 格式是 20260316, PG 读出来可能是 2026-03-16 或 20260316
+                if latest_pg_date.replace('-', '') >= target_latest.replace('-', ''):
+                    return self._format_kline(pg_df, limit)
+                else:
+                    logger.info(f"PG data for {ts_code} is stale ({latest_pg_date}). Forcing Tushare API fetch.")
         except Exception:
             pass
 
@@ -177,6 +193,95 @@ class TushareClient:
             logger.error(f"Tushare get_daily error for {symbol}: {e}")
             return None
 
+    def get_adj_kline(self, symbol: str, start_date: str = None, 
+                      limit: int = 200, adj: str = 'hfq') -> Optional[pd.DataFrame]:
+        """
+        获取复权日线数据 (使用 pro_bar 接口)
+        10000 积分用户推荐使用此接口以获取精确的技术分析基础
+        """
+        if not self.available:
+            return None
+        ts_code = self._symbol_to_ts_code(symbol)
+        try:
+            import tushare as ts
+            self._rate_limit()
+            if not start_date:
+                start_date = (datetime.now() - timedelta(days=limit * 2)).strftime('%Y%m%d')
+            
+            # 使用 pro_bar 获取复权行情
+            df = ts.pro_bar(ts_code=ts_code, adj=adj, start_date=start_date)
+            if df is None or df.empty:
+                return None
+            
+            # 复权数据暂时不冲突原有 daily 表，直接返回格式化后的结果
+            return self._format_kline(df, limit)
+        except Exception as e:
+            logger.error(f"Tushare pro_bar error: {e}")
+            return None
+
+    def get_daily_basic(self, symbol: str, limit: int = 100) -> Optional[pd.DataFrame]:
+        """获取每日指标 (PE/PB/换手率)"""
+        ts_code = self._symbol_to_ts_code(symbol)
+        
+        # 1. PG 先读
+        try:
+            from core.database import read_daily_basic, write_daily_basic
+            pg_df = read_daily_basic(ts_code, limit)
+            if pg_df is not None and len(pg_df) >= limit:
+                # 检查日期实效性
+                latest_dt = str(pg_df['trade_date'].iloc[0]).replace('-', '')
+                target_dt = datetime.now().strftime('%Y%m%d')
+                if latest_dt >= target_dt:
+                    return pg_df
+        except Exception:
+            pass
+
+        if not self.available:
+            return None
+        try:
+            self._rate_limit()
+            start_date = (datetime.now() - timedelta(days=limit * 2)).strftime('%Y%m%d')
+            df = self.pro.daily_basic(ts_code=ts_code, start_date=start_date)
+            if df is not None and not df.empty:
+                # 写入 PG
+                try:
+                    write_daily_basic(df)
+                except Exception:
+                    pass
+                return df
+            return None
+        except Exception as e:
+            logger.error(f"Tushare daily_basic error: {e}")
+            return None
+
+    def get_moneyflow_hsgt(self, limit: int = 30) -> Optional[pd.DataFrame]:
+        """获取宏观资金流 (沪深港通)"""
+        # 1. PG 先读
+        try:
+            from core.database import read_macro_hsgt, write_macro_hsgt
+            pg_df = read_macro_hsgt(limit)
+            if pg_df is not None and len(pg_df) >= limit:
+                return pg_df
+        except Exception:
+            pass
+
+        if not self.available:
+            return None
+        try:
+            self._rate_limit()
+            start_date = (datetime.now() - timedelta(days=limit * 2)).strftime('%Y%m%d')
+            df = self.pro.moneyflow_hsgt(start_date=start_date)
+            if df is not None and not df.empty:
+                try:
+                    write_macro_hsgt(df)
+                except Exception:
+                    pass
+                return df
+            return None
+        except Exception as e:
+            logger.error(f"Tushare moneyflow_hsgt error: {e}")
+            return None
+
     def get_weekly(self, symbol: str, limit: int = 100) -> Optional[pd.DataFrame]:
         """获取周线数据"""
         ts_code = self._symbol_to_ts_code(symbol)
@@ -186,7 +291,13 @@ class TushareClient:
             from core.database import read_kline, write_kline
             pg_df = read_kline(ts_code, 'kline_weekly', limit * 2)
             if pg_df is not None and len(pg_df) >= limit:
-                return self._format_kline(pg_df, limit)
+                # 校验周线实效性 (周线一般周六更新)
+                now = datetime.now()
+                # 简单逻辑：如果今天周六/周日，数据库里没有本周五的数据，则视为陈旧
+                last_fri = (now - timedelta(days=now.weekday()+2)).strftime('%Y-%m-%d')
+                latest_pg_date = str(pg_df['trade_date'].iloc[-1]).split(' ')[0].replace('-', '')
+                if latest_pg_date >= last_fri.replace('-', ''):
+                    return self._format_kline(pg_df, limit)
         except Exception:
             pass
 
@@ -216,6 +327,8 @@ class TushareClient:
             from core.database import read_kline, write_kline
             pg_df = read_kline(ts_code, 'kline_monthly', limit * 2)
             if pg_df is not None and len(pg_df) >= limit:
+                # 校验月线 (月线一般月底更新)
+                # 如果数据库中最后的月份不是当前月/上月，则可能需要更新
                 return self._format_kline(pg_df, limit)
         except Exception:
             pass
@@ -573,6 +686,32 @@ class TushareClient:
             return df.head(8) if df is not None and not df.empty else None
         except Exception as e:
             logger.error(f"Tushare stk_holdernumber error: {e}")
+            return None
+
+    def get_repurchase(self, symbol: str) -> Optional[pd.DataFrame]:
+        """获取股份回购记录 (10000 积分尊享)"""
+        if not self.available:
+            return None
+        ts_code = self._symbol_to_ts_code(symbol)
+        try:
+            self._rate_limit()
+            df = self.pro.repurchase(ts_code=ts_code)
+            return df if df is not None and not df.empty else None
+        except Exception as e:
+            logger.error(f"Tushare repurchase error: {e}")
+            return None
+
+    def get_stk_surv(self, symbol: str) -> Optional[pd.DataFrame]:
+        """获取机构调研数据 (10000 积分尊享)"""
+        if not self.available:
+            return None
+        ts_code = self._symbol_to_ts_code(symbol)
+        try:
+            self._rate_limit()
+            df = self.pro.stk_surv(ts_code=ts_code)
+            return df if df is not None and not df.empty else None
+        except Exception as e:
+            logger.error(f"Tushare stk_surv error: {e}")
             return None
 
 

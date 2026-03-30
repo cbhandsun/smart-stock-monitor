@@ -20,6 +20,7 @@ LANG_MAP = {
         "export_report": "📝 导出报告",
 
         # 导航
+        "macro_intelligence": "🧭 宏观雷达",
         "market_discovery": "📡 实时信号流",
         "dna_analysis": "🧬 深度决策中心",
         "strat_capture": "策略捕捉引擎",
@@ -42,6 +43,7 @@ LANG_MAP = {
         "sentiment": "💭 情绪分析",
         "anomaly": "🚨 异常监控",
         "investment_advisor": "🎯 智能投顾",
+        "data_manager": "⚙️ 数据管理",
         "time_period": "时间周期",
         "indicators": "技术指标",
 
@@ -138,6 +140,7 @@ LANG_MAP = {
         "export_report": "📝 Export Report",
 
         # Navigation
+        "macro_intelligence": "🧭 Macro Alpha",
         "market_discovery": "📡 Signal Stream",
         "dna_analysis": "🧬 Decision Center",
         "strat_capture": "Strategy Engine",
@@ -160,6 +163,7 @@ LANG_MAP = {
         "sentiment": "💭 Sentiment",
         "anomaly": "🚨 Anomaly Monitor",
         "investment_advisor": "🎯 AI Advisor",
+        "data_manager": "⚙️ Data Sync",
         "time_period": "Time Period",
         "indicators": "Indicators",
 

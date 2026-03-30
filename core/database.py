@@ -132,6 +132,30 @@ def init_tables():
         updated_at      TIMESTAMP DEFAULT NOW(),
         PRIMARY KEY (ts_code, end_date)
     );
+
+    -- 每日估值指标 (PE/PB/换手/市值)
+    CREATE TABLE IF NOT EXISTS stock_daily_basic (
+        ts_code         VARCHAR(16) NOT NULL,
+        trade_date      VARCHAR(10) NOT NULL,
+        turnover_rate   NUMERIC(12,4),
+        pe              NUMERIC(12,4),
+        pb              NUMERIC(12,4),
+        total_mv        NUMERIC(18,4),  -- 总市值(万元)
+        float_mv        NUMERIC(18,4),  -- 流通市值(万元)
+        updated_at      TIMESTAMP DEFAULT NOW(),
+        PRIMARY KEY (ts_code, trade_date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_stk_daily_basic_date ON stock_daily_basic(trade_date);
+
+    -- 宏观资金流 (沪深港通)
+    CREATE TABLE IF NOT EXISTS macro_hsgt (
+        trade_date      VARCHAR(10) PRIMARY KEY,
+        hgt             NUMERIC(18,4),  -- 沪股通(百万)
+        sgt             NUMERIC(18,4),  -- 深股通(百万)
+        north_money     NUMERIC(18,4),  -- 北向资金合计(百万)
+        south_money     NUMERIC(18,4),  -- 南向资金合计(百万)
+        updated_at      TIMESTAMP DEFAULT NOW()
+    );
     """
 
     try:
@@ -252,3 +276,83 @@ def write_stock_basic(df: pd.DataFrame):
         logger.info(f"PG write_stock_basic: {len(df_write)} rows")
     except Exception as e:
         logger.error(f"PG write_stock_basic error: {e}")
+
+def write_daily_basic(df: pd.DataFrame):
+    """写入每日估值指标 (UPSERT)"""
+    engine = get_engine()
+    if not engine or df is None or df.empty:
+        return
+    try:
+        cols = ['ts_code', 'trade_date', 'turnover_rate', 'pe', 'pb', 'total_mv', 'float_mv']
+        available = [c for c in cols if c in df.columns]
+        df_write = df[available].copy()
+        
+        with engine.connect() as conn:
+            for _, row in df_write.iterrows():
+                vals = {c: row[c] for c in available}
+                upsert_sql = text(f"""
+                    INSERT INTO stock_daily_basic ({', '.join(available)}, updated_at)
+                    VALUES ({', '.join(':' + c for c in available)}, NOW())
+                    ON CONFLICT (ts_code, trade_date) DO UPDATE SET
+                    {', '.join(f'{c} = EXCLUDED.{c}' for c in available if c not in ('ts_code', 'trade_date'))},
+                    updated_at = NOW()
+                """)
+                conn.execute(upsert_sql, vals)
+            conn.commit()
+    except Exception as e:
+        logger.warning(f"PG write_daily_basic error: {e}")
+
+def write_macro_hsgt(df: pd.DataFrame):
+    """写入宏观资金流 (UPSERT)"""
+    engine = get_engine()
+    if not engine or df is None or df.empty:
+        return
+    try:
+        cols = ['trade_date', 'hgt', 'sgt', 'north_money', 'south_money']
+        available = [c for c in cols if c in df.columns]
+        df_write = df[available].copy()
+        
+        with engine.connect() as conn:
+            for _, row in df_write.iterrows():
+                vals = {c: row[c] for c in available}
+                upsert_sql = text(f"""
+                    INSERT INTO macro_hsgt ({', '.join(available)}, updated_at)
+                    VALUES ({', '.join(':' + c for c in available)}, NOW())
+                    ON CONFLICT (trade_date) DO UPDATE SET
+                    {', '.join(f'{c} = EXCLUDED.{c}' for c in available if c != 'trade_date')},
+                    updated_at = NOW()
+                """)
+                conn.execute(upsert_sql, vals)
+            conn.commit()
+    except Exception as e:
+        logger.warning(f"PG write_macro_hsgt error: {e}")
+
+def read_daily_basic(ts_code: str, limit: int = 200) -> Optional[pd.DataFrame]:
+    """读取每日估值指标"""
+    engine = get_engine()
+    if not engine:
+        return None
+    try:
+        sql = text("""
+            SELECT trade_date, turnover_rate, pe, pb, total_mv, float_mv
+            FROM stock_daily_basic
+            WHERE ts_code = :code
+            ORDER BY trade_date DESC
+            LIMIT :limit
+        """)
+        df = pd.read_sql(sql, engine, params={'code': ts_code, 'limit': limit})
+        return df if not df.empty else None
+    except Exception:
+        return None
+
+def read_macro_hsgt(limit: int = 100) -> Optional[pd.DataFrame]:
+    """读取宏观资金流"""
+    engine = get_engine()
+    if not engine:
+        return None
+    try:
+        sql = text("SELECT * FROM macro_hsgt ORDER BY trade_date DESC LIMIT :limit")
+        df = pd.read_sql(sql, engine, params={'limit': limit})
+        return df if not df.empty else None
+    except Exception:
+        return None

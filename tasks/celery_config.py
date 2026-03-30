@@ -40,4 +40,12 @@ celery_app.conf.beat_schedule = {
         'task': 'tasks.reports.generate_weekly_report',
         'schedule': crontab(day_of_week=5, hour=18, minute=0),  # 每周五18:00
     },
+    'prewarm-market-snapshot': {
+        'task': 'tasks.market_data.prewarm_market_snapshot',
+        'schedule': 300.0,  # 每5分钟
+    },
+    'sync-market-valuation': {
+        'task': 'tasks.market_data.sync_market_valuation',
+        'schedule': crontab(hour=16, minute=30),  # 每交易日16:30全屏同步
+    },
 }

@@ -39,7 +39,7 @@ def stock_selector(label="分析标的", key_suffix="default"):
     返回: 当前选中的股票代码字符串
     """
     current = st.session_state.get('selected_stock', '601318')
-    new_val = st.text_input(label, value=current, key=f"stock_sel_{key_suffix}")
+    new_val = st.text_input(label, value=current, key=f"PRO_SSM_V7_stock_sel_{key_suffix}")
 
     # 同步回 session_state
     if new_val and new_val != current:
@@ -48,12 +48,15 @@ def stock_selector(label="分析标的", key_suffix="default"):
     return new_val
 
 
-def nav_to_page(target_page, label, icon="→", stock_code=None, button_type="secondary"):
+def nav_to_page(target_page, label, icon="→", stock_code=None, button_type="secondary", key_suffix=""):
     """
     跨页面导航按钮。
     点击后跳转到目标页面，可选地设置分析标的。
     """
-    if st.button(f"{icon} {label}", key=f"nav_{target_page}_{id(nav_to_page)}",
+    # 使用 PRO_SSM_V7_ 命名空间前缀
+    clean_label = "".join(filter(str.isalnum, label))
+    btn_key = f"PRO_SSM_V7_nav_{target_page}_{clean_label}_{key_suffix}"
+    if st.button(f"{icon} {label}", key=btn_key,
                  type=button_type, use_container_width=True):
         if stock_code:
             st.session_state['selected_stock'] = stock_code
@@ -82,11 +85,32 @@ def empty_state(icon="📋", title="暂无数据", description="", action_label=
     if action_label and action_key:
         _, center, _ = st.columns([2, 1, 2])
         with center:
-            return st.button(action_label, key=action_key, type="primary", use_container_width=True)
+            final_key = f"PRO_SSM_V7_empty_{action_key}"
+            return st.button(action_label, key=final_key, type="primary", use_container_width=True)
     return False
 
 
 def status_badge_html(text, level="info"):
     """返回内联状态徽章 HTML (success/warning/danger/info)"""
     return f'<span class="badge badge-{level}">{text}</span>'
+
+
+def card_container(title, subtitle="", icon="", color="#38bdf8"):
+    """
+    高颜值卡片容器 — 用于页面的核心区块划分。
+    支持标题、副标题、图标以及自动主题匹配。
+    """
+    import streamlit as st
+    icon_html = f'<span style="font-size:1.3rem; margin-right:8px;">{icon}</span>' if icon else ''
+    st.markdown(f"""
+    <div style="margin-top: 24px; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.06);">
+        <div style="font-family: 'Outfit', sans-serif; font-size: 1.1rem; font-weight: 700; color: #f1f5f9; display: flex; align-items: center;">
+            {icon_html}{title}
+        </div>
+        <div style="font-size: 0.82rem; color: #64748b; margin-top: 2px; margin-left: { '32' if icon else '0' }px;">
+            {subtitle}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    return st.container()
 

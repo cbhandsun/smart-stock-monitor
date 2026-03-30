@@ -439,51 +439,40 @@ class SmartAlertSystem:
         self.alert_id_counter = 0
         self.subscribers = defaultdict(list)  # symbol -> list of callbacks
         self.ai = get_ai_manager()
+        import concurrent.futures
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
     
     def generate_alert(self, event: AnomalyEvent) -> Alert:
-        """
-        从异常事件生成智能提醒
-        
-        Args:
-            event: 异常事件
-            
-        Returns:
-            智能提醒
-        """
+        """从异常事件生成智能提醒 (异步增强)"""
         self.alert_id_counter += 1
         alert_id = f"ALT{self.alert_id_counter:06d}"
         
-        # 生成标题和消息
         title = f"[{event.level.value.upper()}] {event.symbol} {event.description}"
         
-        # 使用AI生成建议
-        message = self._generate_smart_message(event)
+        # 初始摘要（非 AI）
+        initial_msg = f"{event.description}。{event.suggested_action}。置信度：{event.confidence * 100:.0f}%"
         
-        # 确定有效期
-        if event.level == AlertLevel.CRITICAL:
-            expires = datetime.now() + timedelta(hours=1)
-        elif event.level == AlertLevel.WARNING:
-            expires = datetime.now() + timedelta(hours=4)
-        else:
-            expires = datetime.now() + timedelta(days=1)
+        expires = datetime.now() + timedelta(hours=4)
         
         alert = Alert(
-            id=alert_id,
-            symbol=event.symbol,
-            title=title,
-            message=message,
-            level=event.level,
-            created_at=datetime.now(),
-            expires_at=expires,
-            actions=self._suggest_actions(event)
+            id=alert_id, symbol=event.symbol, title=title,
+            message=initial_msg, level=event.level, created_at=datetime.now(),
+            expires_at=expires, actions=self._suggest_actions(event)
         )
-        
         self.alerts.append(alert)
         
-        # 通知订阅者
-        self._notify_subscribers(event.symbol, alert)
+        # 异步启动 AI 润色
+        self.executor.submit(self._async_enrich_alert, alert, event)
         
+        self._notify_subscribers(event.symbol, alert)
         return alert
+
+    def _async_enrich_alert(self, alert, event):
+        """后台线程：AI 润色提醒内容"""
+        smart_msg = self._generate_smart_message(event)
+        alert.message = smart_msg
+        # 再次触发通知，告知 UI 更新
+        self._notify_subscribers(event.symbol, alert)
     
     def _generate_smart_message(self, event: AnomalyEvent) -> str:
         """生成智能提醒消息"""
