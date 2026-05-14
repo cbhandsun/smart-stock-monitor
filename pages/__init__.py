@@ -30,10 +30,27 @@ def save_watchlist(stocks):
         json.dump(stocks, f)
 
 
-def load_cached_report(symbol):
-    """加载缓存的AI报告"""
-    path = f"{REPORT_DIR}/{datetime.datetime.now().strftime('%Y-%m-%d')}/{symbol}.md"
-    if os.path.exists(path):
-        with open(path, "r") as f:
-            return f.read(), True
+def load_cached_report(symbol: str):
+    """加载缓存的AI报告 (PostgreSQL版)"""
+    try:
+        from database.models import get_db, ResearchReport
+        
+        db = get_db()
+        session = db.get_session()
+        today = datetime.datetime.now().date()
+        
+        # 查找今天最新的报告
+        report = session.query(ResearchReport).filter(
+            ResearchReport.symbol == symbol
+        ).order_by(ResearchReport.report_date.desc()).first()
+        
+        if report and report.report_date and report.report_date.date() == today:
+            content = report.content
+            session.close()
+            return content, True
+            
+        session.close()
+    except Exception as e:
+        logger.error(f"Failed to load cached report from DB for {symbol}: {e}")
+        
     return None, False

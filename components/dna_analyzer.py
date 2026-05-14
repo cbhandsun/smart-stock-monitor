@@ -104,7 +104,7 @@ def _render_daily_info(full_symbol, stock_name):
         <div><div class="dna-price-label">成交额</div><div class="dna-price-val">{quote['amount']/1e8:.2f} 亿</div></div>
     </div>
 </div>"""
-        st.markdown(html, unsafe_allow_html=True)
+        st.html(html)
     except Exception as e:
         st.error(f"Quote Redner Error: {e}")
     except Exception:
@@ -162,17 +162,17 @@ def _render_tech_observation(kline, q_metrics, stock_name, stock_code):
     
     c1, c2 = st.columns(2)
     with c1:
-        st.markdown(f"""<div class="dna-tech-box">
+        st.html(f"""<div class="dna-tech-box">
 <div style="font-weight:800; color:#f8fafc; margin-bottom:15px; font-size:1.1rem;">🔬 技术形态扫描</div>
 {_to_html(k_analysis)}
 <div style="margin-top:20px; padding-top:15px; border-top:1px solid rgba(255,255,255,0.05);">
 <div style="font-weight:700; color:#94a3b8; margin-bottom:10px;">📉 指标研判</div>
 {_to_html(indicators)}
 </div>
-</div>""", unsafe_allow_html=True)
+</div>""")
     
     with c2:
-        st.markdown(f"""<div class="dna-tech-box" style="border-left: 4px solid {signal_color};">
+        st.html(f"""<div class="dna-tech-box" style="border-left: 4px solid {signal_color};">
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
 <span style="font-weight:800; color:#f8fafc; font-size:1.1rem;">🎯 决策建议</span>
 <span class="status-pill" style="background:{signal_color}22; color:{signal_color}; padding:4px 10px;">{signal_text}</span>
@@ -185,7 +185,7 @@ def _render_tech_observation(kline, q_metrics, stock_name, stock_code):
 <div style="font-weight:700; color:#94a3b8; margin-bottom:10px;">📍 关键价位</div>
 {_to_html(levels)}
 </div>
-</div>""", unsafe_allow_html=True)
+</div>""")
 
 
 
@@ -360,17 +360,6 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
         if f_data and f_data.get('analysis'):
             st.caption(f"📊 {f_data['analysis']}")
 
-        if st.button(L.get('invoke_ai', '启动多模态 AI 研判'), key=f"PRO_SSM_V7_DNA_invoke_ai", type="primary", use_container_width=True):
-            with st.spinner("🧠 AI 正在分析市场数据..."):
-                # 改为流式直连展示，并捕获结果用于保存
-                rep = st.write_stream(generate_ai_report_stream(sel_stock, name_map.get(sel_stock, ''), full_symbol))
-                st.success("✅ 分析完成！")
-                
-                os.makedirs(f"{REPORT_DIR}/{datetime.datetime.now().strftime('%Y-%m-%d')}", exist_ok=True)
-                with open(f"{REPORT_DIR}/{datetime.datetime.now().strftime('%Y-%m-%d')}/{sel_stock}.md", "w") as f:
-                    f.write(rep)
-                st.toast("报告已保存", icon="📁")
-
         # ---- 估值丝带 (10000 积分看板) ----
         if db_data is not None and not db_data.empty:
             st.divider()
@@ -427,15 +416,40 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
                 # 改为流式直连展示，并捕获结果用于保存
                 rep = st.write_stream(generate_ai_report_stream(sel_stock, name_map.get(sel_stock, ''), full_symbol))
                 st.success("✅ 分析完成！")
-
-                os.makedirs(f"{REPORT_DIR}/{datetime.datetime.now().strftime('%Y-%m-%d')}", exist_ok=True)
-                with open(f"{REPORT_DIR}/{datetime.datetime.now().strftime('%Y-%m-%d')}/{sel_stock}.md", "w") as f:
-                    f.write(rep)
+                
+                # 手动生成的也写入数据库
+                try:
+                    from database.models import get_db, ResearchReport
+                    db = get_db()
+                    session = db.get_session()
+                    
+                    today = datetime.datetime.now().date()
+                    existing = session.query(ResearchReport).filter(
+                        ResearchReport.symbol == sel_stock
+                    ).all()
+                    for r in existing:
+                        if r.report_date and r.report_date.date() == today:
+                            session.delete(r)
+                            
+                    new_report = ResearchReport(
+                        symbol=sel_stock,
+                        title=f"AI Deep Diagnosis (Manual): {name_map.get(sel_stock, '')} ({sel_stock})",
+                        author="Quantum Pro AI",
+                        institution="Smart Stock Monitor",
+                        rating="Neutral",
+                        content=rep,
+                        report_date=datetime.datetime.now()
+                    )
+                    session.add(new_report)
+                    session.commit()
+                    session.close()
+                except Exception as e:
+                    st.error(f"Failed to save DB report: {e}")
 
                 st.toast("报告已保存", icon="📁")
                 st.balloons()
         elif is_cached:
-            st.markdown(f"<div class='ai-box'>{cached}</div>", unsafe_allow_html=True)
+            st.html(f"<div class='ai-box'>{cached}</div>")
 
     # -------- Tab 3: 资金面 --------
     with tab_fund:
@@ -569,13 +583,13 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
                     rep = ts.get_repurchase(sel_stock)
                     if rep is not None and not rep.empty:
                         for _, row in rep.head(3).iterrows():
-                            st.markdown(f"""
+                            st.html(f"""
                             <div style="background:rgba(239,68,68,0.05); border-left:3px solid #ef4444; padding:8px 12px; margin-bottom:8px; border-radius:4px;">
                                 <div style="font-size:0.8rem; color:#94a3b8">{row['ann_date']}</div>
                                 <div style="font-size:0.9rem; color:#ef4444; font-weight:600;">回购金额: {row['vol']:.2f} 万/股</div>
                                 <div style="font-size:0.75rem; color:#64748b">回购区间: {row['low_limit']}-{row['high_limit']}</div>
                             </div>
-                            """, unsafe_allow_html=True)
+                            """)
                     else:
                         st.caption("近期无回购记录")
 
@@ -584,13 +598,13 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
                     surv = ts.get_stk_surv(sel_stock)
                     if surv is not None and not surv.empty:
                         for _, row in surv.head(3).iterrows():
-                            st.markdown(f"""
+                            st.html(f"""
                             <div style="background:rgba(56,189,248,0.05); border-left:3px solid #38bdf8; padding:8px 12px; margin-bottom:8px; border-radius:4px;">
                                 <div style="font-size:0.8rem; color:#94a3b8">{row['ann_date']}</div>
                                 <div style="font-size:0.9rem; color:#e2e8f0; font-weight:600;">调研机构: {row['org_name'][:15]}...</div>
                                 <div style="font-size:0.75rem; color:#64748b">类型: {row['surv_type'] or '实地'}</div>
                             </div>
-                            """, unsafe_allow_html=True)
+                            """)
                     else:
                         st.caption("近期无调研活动")
         except Exception as e:
@@ -762,12 +776,12 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
                     industry_badge = f'<span class="badge badge-info" style="margin-left:8px;">{industry}</span>' if industry else ''
                     area_badge = f'<span class="badge badge-success" style="margin-left:4px;">{area}</span>' if area else ''
 
-                    st.markdown(f'''<div style="margin-bottom: 16px;">
+                    st.html(f'''<div style="margin-bottom: 16px;">
     <span style="font-family: Outfit, sans-serif; font-size: 1.4rem; font-weight: 700;
           color: #f1f5f9;">{stock_name_display}</span>
     <span style="color: #64748b; font-size: 0.85rem; margin-left: 8px;">{sel_stock}</span>
     {industry_badge}{area_badge}
-</div>''', unsafe_allow_html=True)
+</div>''')
 
                     # ---- 关键信息卡片 (2列) ----
                     prof_c1, prof_c2 = st.columns([2, 3])
@@ -825,22 +839,22 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
                                          f'<span style="color:#94a3b8;">📧 </span>'
                                          f'<span style="color:#cbd5e1;">{email}</span></div>')
 
-                        st.markdown(f'''<div class="ssm-card">
+                        st.html(f'''<div class="ssm-card">
     <div style="font-size: 0.9rem; font-weight: 600; color: #f1f5f9;
          margin-bottom: 10px;">📋 基本信息</div>
     {rows_html}
     {web_html}
-</div>''', unsafe_allow_html=True)
+</div>''')
 
                     with prof_c2:
                         # 主营业务
                         main_biz = c.get('main_business', '') or ''
                         if main_biz:
-                            st.markdown(f'''<div class="ssm-card" style="margin-bottom: 12px;">
+                            st.html(f'''<div class="ssm-card" style="margin-bottom: 12px;">
     <div style="font-size: 0.9rem; font-weight: 600; color: #f1f5f9;
          margin-bottom: 8px;">💼 主营业务</div>
     <div style="color: #cbd5e1; font-size: 0.85rem; line-height: 1.7;">{main_biz}</div>
-</div>''', unsafe_allow_html=True)
+</div>''')
 
                         # 公司简介
                         intro = c.get('introduction', '') or ''
@@ -848,23 +862,21 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
                             # 截断过长简介并提供展开
                             if len(intro) > 300:
                                 with st.expander("📖 公司简介", expanded=True):
-                                    st.markdown(f'''<div style="color: #cbd5e1; font-size: 0.85rem;
-                                         line-height: 1.8;">{intro}</div>''',
-                                               unsafe_allow_html=True)
+                                    st.html(f'''<div style="color: #cbd5e1; font-size: 0.85rem;
+                                         line-height: 1.8;">{intro}</div>''')
                             else:
-                                st.markdown(f'''<div class="ssm-card">
+                                st.html(f'''<div class="ssm-card">
     <div style="font-size: 0.9rem; font-weight: 600; color: #f1f5f9;
          margin-bottom: 8px;">📖 公司简介</div>
     <div style="color: #cbd5e1; font-size: 0.85rem; line-height: 1.8;">{intro}</div>
-</div>''', unsafe_allow_html=True)
+</div>''')
 
                         # 经营范围
                         biz_scope = c.get('business_scope', '') or ''
                         if biz_scope:
                             with st.expander("📜 经营范围"):
-                                st.markdown(f'''<div style="color: #94a3b8; font-size: 0.82rem;
-                                     line-height: 1.7;">{biz_scope}</div>''',
-                                           unsafe_allow_html=True)
+                                st.html(f'''<div style="color: #94a3b8; font-size: 0.82rem;
+                                     line-height: 1.7;">{biz_scope}</div>''')
                 else:
                     st.info("暂无公司简介数据")
         except Exception as e:
@@ -1074,7 +1086,7 @@ def render_dna_analyzer(L, my_stocks, name_map, default_target=None):
                             f'<span style="color:#e2e8f0;font-weight:500;">{val}</span></div>'
                             for label, val in bs_items
                         )
-                        st.markdown(f'<div class="ssm-card">{bs_html}</div>', unsafe_allow_html=True)
+                        st.html(f'<div class="ssm-card">{bs_html}</div>')
                     else:
                         st.info("暂无资产负债表数据")
 

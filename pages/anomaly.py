@@ -5,8 +5,13 @@ import streamlit as st
 from modules.data_loader import fetch_kline
 from modules.ai.anomaly_detector import AnomalyDetector, SmartAlertSystem
 
-anomaly_detector = AnomalyDetector()
-smart_alert_system = SmartAlertSystem(anomaly_detector)
+@st.cache_resource
+def get_anomaly_system():
+    detector = AnomalyDetector()
+    alert_sys = SmartAlertSystem(detector)
+    return detector, alert_sys
+
+anomaly_detector, smart_alert_system = get_anomaly_system()
 
 
 def render(L, my_stocks, name_map):

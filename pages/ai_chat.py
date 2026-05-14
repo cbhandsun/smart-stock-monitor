@@ -39,14 +39,14 @@ def render(L):
 
     # ---- 欢迎面板 (无历史时显示) ----
     if not history:
-        st.markdown('''<div class="chat-welcome">
+        st.html('''<div class="chat-welcome">
     <div class="chat-welcome-icon">🤖</div>
     <div class="chat-welcome-title">欢迎使用 AI 智能问答</div>
     <div class="chat-welcome-desc">
         我可以帮您分析大盘走势、筛选股票、解读技术指标、<br>
         评估投资组合风险。试试下面的快捷问题开始对话 👇
     </div>
-</div>''', unsafe_allow_html=True)
+</div>''')
 
         # 快捷问题按钮
         q_cols = st.columns(len(QUICK_QUESTIONS))

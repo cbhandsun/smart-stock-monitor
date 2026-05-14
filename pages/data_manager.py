@@ -1,4 +1,8 @@
 import streamlit as st
+try:
+    from utils.html_renderer import render_html
+except ImportError:
+    render_html = lambda h: st.html(h)
 import pandas as pd
 import time
 from datetime import datetime
@@ -9,7 +13,7 @@ from modules.data_loader import get_last_timestamp, CACHE_DIR
 import os
 
 def render(L, *args):
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.html("<br>")
     st.markdown("### ⚙️ 数据管理中心 (Data Management Hub)")
     st.caption("监控数据同步状态、服务健康度及缓存完整性。")
     
@@ -24,41 +28,41 @@ def render(L, *args):
     with c1:
         redis_ok = cache.ping()
         color = "#10b981" if redis_ok else "#ef4444"
-        st.markdown(f"""
+        st.html(f"""
         <div style='background:rgba(16,185,129,0.05); border:1px solid {color}; border-radius:10px; padding:15px; text-align:center;'>
             <div style='font-size:0.8rem; color:#94a3b8;'>Redis 缓存</div>
             <div style='font-size:1.2rem; font-weight:bold; color:{color};'>{'在线 (Online)' if redis_ok else '离线 (Offline)'}</div>
         </div>
-        """, unsafe_allow_html=True)
+        """)
         
     with c2:
         ts_ok = ts.available
         color = "#10b981" if ts_ok else "#ef4444"
-        st.markdown(f"""
+        st.html(f"""
         <div style='background:rgba(16,185,129,0.05); border:1px solid {color}; border-radius:10px; padding:15px; text-align:center;'>
             <div style='font-size:0.8rem; color:#94a3b8;'>Tushare 接口</div>
             <div style='font-size:1.2rem; font-weight:bold; color:{color};'>{'正常 (Ready)' if ts_ok else '受限 (Limited)'}</div>
         </div>
-        """, unsafe_allow_html=True)
+        """)
         
     with c3:
         # 统计缓存文件数量
         cache_files = [f for f in os.listdir(CACHE_DIR) if f.endswith('.pkl')]
-        st.markdown(f"""
+        st.html(f"""
         <div style='background:rgba(56,189,248,0.05); border:1px solid #38bdf8; border-radius:10px; padding:15px; text-align:center;'>
             <div style='font-size:0.8rem; color:#94a3b8;'>本地缓存文件</div>
             <div style='font-size:1.2rem; font-weight:bold; color:#38bdf8;'>{len(cache_files)} 个对象</div>
         </div>
-        """, unsafe_allow_html=True)
+        """)
         
     with c4:
         # 获取系统负载或 Celery 状态 (简化版)
-        st.markdown(f"""
+        st.html(f"""
         <div style='background:rgba(139,92,246,0.05); border:1px solid #8b5cf6; border-radius:10px; padding:15px; text-align:center;'>
             <div style='font-size:0.8rem; color:#94a3b8;'>后台工作站</div>
             <div style='font-size:1.2rem; font-weight:bold; color:#8b5cf6;'>Celery 已就绪</div>
         </div>
-        """, unsafe_allow_html=True)
+        """)
 
     st.divider()
     

@@ -1,4 +1,8 @@
 import streamlit as st
+try:
+    from utils.html_renderer import render_html
+except ImportError:
+    render_html = lambda h: st.html(h)
 import pandas as pd
 import plotly.graph_objects as go
 from core.tushare_client import get_ts_client
@@ -75,7 +79,7 @@ def render(L, *args):
                 {"name": "创业板指", "pe": "28.5", "percentile": "15.8%"},
             ]
             for m in metrics:
-                st.markdown(f"""
+                st.html(f"""
                 <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
                     <span style="color:#e2e8f0">{m['name']}</span>
                     <span>
@@ -83,11 +87,11 @@ def render(L, *args):
                         <span style="color:#38bdf8; font-weight:600">分位: {m['percentile']}</span>
                     </span>
                 </div>
-                """, unsafe_allow_html=True)
+                """)
 
     with c2:
         with card_container("🔥 市场交易活跃度"):
-            st.markdown("""
+            st.html("""
             <div style="text-align:center; padding:20px 0;">
                 <div style="font-size:0.8rem; color:#94a3b8">全市场成交额</div>
                 <div style="font-size:1.8rem; color:#f59e0b; font-weight:bold;">9,240.5 亿</div>
@@ -95,7 +99,7 @@ def render(L, *args):
                     较昨日 <span style="color:#ef4444">↑ 12.5%</span>
                 </div>
             </div>
-            """, unsafe_allow_html=True)
+            """)
             st.markdown("<p style='font-size:0.7rem; color:#475569; text-align:center;'>活跃度处于近 20 日中等偏上水平</p>", unsafe_allow_html=True)
 
     st.warning("💡 提示: 宏观雷达建议在每日 17:00 后查看，以获取当日最完整的数据统计。")

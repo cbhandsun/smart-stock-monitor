@@ -2,13 +2,24 @@ import sys
 import os
 import logging
 from celery import shared_task
-from datetime import datetime
+from datetime import datetime, time as dtime
 
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.cache import RedisCache
 from modules.portfolio.watchlist_manager import WatchlistManager
+
+logger = logging.getLogger(__name__)
+
+
+def is_trading_hours() -> bool:
+    """判断当前是否为 A 股交易时段 (工作日 09:25~15:05)"""
+    now = datetime.now()
+    if now.weekday() >= 5:  # 周六/周日
+        return False
+    t = now.time()
+    return dtime(9, 25) <= t <= dtime(15, 5)
 
 @shared_task(bind=True, max_retries=3)
 def update_stock_quote(self, symbol: str):
@@ -107,7 +118,10 @@ def sync_historical_data(symbol: str, years: int = 5):
 
 @shared_task
 def update_all_stocks():
-    """更新所有自选股行情"""
+    """更新所有自选股行情 (仅交易时段执行)"""
+    if not is_trading_hours():
+        logger.debug("[update_all_stocks] 非交易时段，跳过")
+        return "Skipped: outside trading hours"
     try:
         manager = WatchlistManager()
         portfolios = manager.list_portfolios()
@@ -152,16 +166,14 @@ def update_market_overview():
 @shared_task(name='tasks.market_data.prewarm_market_snapshot')
 def prewarm_market_snapshot():
     """
-    预热全市场快照任务 (后台自动刷选股基础因子)
+    预热全市场快照任务 (后台自动刷选股基础因子) — 仅交易时段执行
     """
+    if not is_trading_hours():
+        logger.debug("[prewarm_market_snapshot] 非交易时段，跳过")
+        return "Skipped: outside trading hours"
     try:
         from main import get_full_market_data
-        from core.cache import RedisCache
         
-        # get_full_market_data 内部逻辑：
-        # 1. 尝试 Tushare 快照
-        # 2. 尝试 AkShare 实时榜单
-        # 3. 结果会自动存入 Redis Cache
         df = get_full_market_data()
         if not df.empty:
             return f"Market snapshot pre-warmed: {len(df)} stocks cached"

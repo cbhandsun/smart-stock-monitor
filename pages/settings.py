@@ -41,12 +41,12 @@ def render(L, new_modules_available):
             st.rerun()
 
         lang = st.session_state.get('lang', 'zh')
-        st.markdown(f'''<div style="background:rgba(30,41,59,0.35); border:1px solid rgba(255,255,255,0.06);
+        st.html(f'''<div style="background:rgba(30,41,59,0.35); border:1px solid rgba(255,255,255,0.06);
             border-radius:10px; padding:10px 14px; margin-top:12px; font-size:0.82rem;">
             <div style="color:#94a3b8; margin-bottom:4px;">当前配置</div>
             <div style="color:#e2e8f0;">主题: <strong>{"🌙 深色" if theme == "dark" else "☀️ 浅色"}</strong></div>
             <div style="color:#e2e8f0;">语言: <strong>{"🇨🇳 中文" if lang == "zh" else "🇺🇸 English"}</strong></div>
-        </div>''', unsafe_allow_html=True)
+        </div>''')
 
     # ---- 列 2: 系统信息 ----
     with col2:
@@ -68,7 +68,7 @@ def render(L, new_modules_available):
         ts_dot = "online" if ts_ok else "offline"
         ts_label = "已连接" if ts_ok else "未连接"
 
-        st.markdown(f'''<div style="background:rgba(30,41,59,0.35); border:1px solid rgba(255,255,255,0.06);
+        st.html(f'''<div style="background:rgba(30,41,59,0.35); border:1px solid rgba(255,255,255,0.06);
             border-radius:12px; padding:14px 18px; line-height:2.2;">
             <div style="font-size:0.85rem; color:#94a3b8; margin-bottom:6px;">服务状态</div>
             <div style="font-size:0.85rem; color:#e2e8f0;">
@@ -81,16 +81,16 @@ def render(L, new_modules_available):
                 <span class="health-dot {"online" if new_modules_available else "offline"}"></span>
                 扩展模块: <strong>{"✅ 已加载" if new_modules_available else "⚠️ 部分不可用"}</strong>
             </div>
-        </div>''', unsafe_allow_html=True)
+        </div>''')
 
-        st.markdown(f'''<div style="background:rgba(30,41,59,0.35); border:1px solid rgba(255,255,255,0.06);
+        st.html(f'''<div style="background:rgba(30,41,59,0.35); border:1px solid rgba(255,255,255,0.06);
             border-radius:12px; padding:14px 18px; margin-top:10px;">
             <div style="font-size:0.85rem; color:#94a3b8;">版本信息</div>
             <div style="font-family:'Outfit',sans-serif; font-size:1.2rem; font-weight:700; color:#f1f5f9;">
                 SSM Quantum Pro
             </div>
             <div style="font-size:0.78rem; color:#64748b;">v7.0 | AI 量化投研工作站</div>
-        </div>''', unsafe_allow_html=True)
+        </div>''')
 
     # ---- 列 3: 缓存管理 ----
     with col3:

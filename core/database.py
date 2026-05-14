@@ -198,18 +198,16 @@ def read_kline(ts_code: str, table: str = 'kline_daily',
 
 def write_kline(df: pd.DataFrame, ts_code: str,
                 table: str = 'kline_daily'):
-    """写入 K 线数据 (UPSERT)"""
+    """写入 K 线数据 (批量 UPSERT — executemany)"""
     engine = get_engine()
     if not engine or df is None or df.empty:
         return
 
     try:
-        # 确保有 ts_code 列
         df = df.copy()
         if 'ts_code' not in df.columns:
             df['ts_code'] = ts_code
 
-        # 需要的列
         cols = ['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'vol', 'amount', 'pct_chg']
         available = [c for c in cols if c in df.columns]
         df_write = df[available].dropna(subset=['trade_date'])
@@ -217,40 +215,42 @@ def write_kline(df: pd.DataFrame, ts_code: str,
         if df_write.empty:
             return
 
-        # 使用 ON CONFLICT 做 UPSERT
+        # 批量 UPSERT — 1 次数据库往返代替 N 次
+        update_cols = [c for c in available if c not in ('ts_code', 'trade_date')]
+        upsert_sql = text(f"""
+            INSERT INTO {table} ({', '.join(available)})
+            VALUES ({', '.join(':' + c for c in available)})
+            ON CONFLICT (ts_code, trade_date) DO UPDATE SET
+            {', '.join(f'{c} = EXCLUDED.{c}' for c in update_cols)}
+        """)
+        records = df_write.where(pd.notnull(df_write), None).to_dict(orient='records')
         with engine.connect() as conn:
-            for _, row in df_write.iterrows():
-                vals = {c: (row[c] if c in row.index else None) for c in available}
-                upsert_sql = text(f"""
-                    INSERT INTO {table} ({', '.join(available)})
-                    VALUES ({', '.join(':' + c for c in available)})
-                    ON CONFLICT (ts_code, trade_date) DO UPDATE SET
-                    {', '.join(f'{c} = EXCLUDED.{c}' for c in available if c not in ('ts_code', 'trade_date'))}
-                """)
-                conn.execute(upsert_sql, vals)
+            conn.execute(upsert_sql, records)
             conn.commit()
-        logger.debug(f"PG write_kline: {ts_code} {len(df_write)} rows → {table}")
+        logger.debug(f"PG write_kline: {ts_code} {len(records)} rows → {table}")
     except Exception as e:
         logger.error(f"PG write_kline error: {e}")
 
 
 def read_stock_basic(symbol: str = None) -> Optional[pd.DataFrame]:
-    """读取股票基础信息"""
+    """读取股票基础信息 (按需字段，避免全表 SELECT *)"""
     engine = get_engine()
     if not engine:
         return None
     try:
         if symbol:
-            sql = text("SELECT * FROM stock_basic WHERE symbol = :sym")
+            sql = text("SELECT ts_code, symbol, name, area, industry, market, list_date FROM stock_basic WHERE symbol = :sym")
             return pd.read_sql(sql, engine, params={'sym': symbol})
         else:
-            return pd.read_sql("SELECT * FROM stock_basic", engine)
+            # 仅取 name_map 所需的关键字段，避免全列传输
+            sql = text("SELECT ts_code, symbol, name FROM stock_basic")
+            return pd.read_sql(sql, engine)
     except Exception:
         return None
 
 
 def write_stock_basic(df: pd.DataFrame):
-    """写入股票基础信息 (UPSERT)"""
+    """写入股票基础信息 (批量 UPSERT — executemany)"""
     engine = get_engine()
     if not engine or df is None or df.empty:
         return
@@ -259,26 +259,26 @@ def write_stock_basic(df: pd.DataFrame):
         available = [c for c in cols if c in df.columns]
         df_write = df[available].copy()
         df_write['updated_at'] = datetime.now()
+        available_with_ts = available + ['updated_at']
 
+        update_cols = [c for c in available if c != 'ts_code']
+        upsert_sql = text(f"""
+            INSERT INTO stock_basic ({', '.join(available_with_ts)})
+            VALUES ({', '.join(':' + c for c in available_with_ts)})
+            ON CONFLICT (ts_code) DO UPDATE SET
+            {', '.join(f'{c} = EXCLUDED.{c}' for c in update_cols)},
+            updated_at = EXCLUDED.updated_at
+        """)
+        records = df_write.where(pd.notnull(df_write), None).to_dict(orient='records')
         with engine.connect() as conn:
-            for _, row in df_write.iterrows():
-                vals = {c: row[c] for c in available}
-                vals['updated_at'] = datetime.now()
-                upsert_sql = text(f"""
-                    INSERT INTO stock_basic ({', '.join(available)}, updated_at)
-                    VALUES ({', '.join(':' + c for c in available)}, :updated_at)
-                    ON CONFLICT (ts_code) DO UPDATE SET
-                    {', '.join(f'{c} = EXCLUDED.{c}' for c in available if c != 'ts_code')},
-                    updated_at = EXCLUDED.updated_at
-                """)
-                conn.execute(upsert_sql, vals)
+            conn.execute(upsert_sql, records)
             conn.commit()
-        logger.info(f"PG write_stock_basic: {len(df_write)} rows")
+        logger.info(f"PG write_stock_basic: {len(records)} rows")
     except Exception as e:
         logger.error(f"PG write_stock_basic error: {e}")
 
 def write_daily_basic(df: pd.DataFrame):
-    """写入每日估值指标 (UPSERT)"""
+    """写入每日估值指标 (批量 UPSERT — executemany)"""
     engine = get_engine()
     if not engine or df is None or df.empty:
         return
@@ -286,24 +286,24 @@ def write_daily_basic(df: pd.DataFrame):
         cols = ['ts_code', 'trade_date', 'turnover_rate', 'pe', 'pb', 'total_mv', 'float_mv']
         available = [c for c in cols if c in df.columns]
         df_write = df[available].copy()
-        
+
+        update_cols = [c for c in available if c not in ('ts_code', 'trade_date')]
+        upsert_sql = text(f"""
+            INSERT INTO stock_daily_basic ({', '.join(available)}, updated_at)
+            VALUES ({', '.join(':' + c for c in available)}, NOW())
+            ON CONFLICT (ts_code, trade_date) DO UPDATE SET
+            {', '.join(f'{c} = EXCLUDED.{c}' for c in update_cols)},
+            updated_at = NOW()
+        """)
+        records = df_write.where(pd.notnull(df_write), None).to_dict(orient='records')
         with engine.connect() as conn:
-            for _, row in df_write.iterrows():
-                vals = {c: row[c] for c in available}
-                upsert_sql = text(f"""
-                    INSERT INTO stock_daily_basic ({', '.join(available)}, updated_at)
-                    VALUES ({', '.join(':' + c for c in available)}, NOW())
-                    ON CONFLICT (ts_code, trade_date) DO UPDATE SET
-                    {', '.join(f'{c} = EXCLUDED.{c}' for c in available if c not in ('ts_code', 'trade_date'))},
-                    updated_at = NOW()
-                """)
-                conn.execute(upsert_sql, vals)
+            conn.execute(upsert_sql, records)
             conn.commit()
     except Exception as e:
         logger.warning(f"PG write_daily_basic error: {e}")
 
 def write_macro_hsgt(df: pd.DataFrame):
-    """写入宏观资金流 (UPSERT)"""
+    """写入宏观资金流 (批量 UPSERT — executemany)"""
     engine = get_engine()
     if not engine or df is None or df.empty:
         return
@@ -311,18 +311,18 @@ def write_macro_hsgt(df: pd.DataFrame):
         cols = ['trade_date', 'hgt', 'sgt', 'north_money', 'south_money']
         available = [c for c in cols if c in df.columns]
         df_write = df[available].copy()
-        
+
+        update_cols = [c for c in available if c != 'trade_date']
+        upsert_sql = text(f"""
+            INSERT INTO macro_hsgt ({', '.join(available)}, updated_at)
+            VALUES ({', '.join(':' + c for c in available)}, NOW())
+            ON CONFLICT (trade_date) DO UPDATE SET
+            {', '.join(f'{c} = EXCLUDED.{c}' for c in update_cols)},
+            updated_at = NOW()
+        """)
+        records = df_write.where(pd.notnull(df_write), None).to_dict(orient='records')
         with engine.connect() as conn:
-            for _, row in df_write.iterrows():
-                vals = {c: row[c] for c in available}
-                upsert_sql = text(f"""
-                    INSERT INTO macro_hsgt ({', '.join(available)}, updated_at)
-                    VALUES ({', '.join(':' + c for c in available)}, NOW())
-                    ON CONFLICT (trade_date) DO UPDATE SET
-                    {', '.join(f'{c} = EXCLUDED.{c}' for c in available if c != 'trade_date')},
-                    updated_at = NOW()
-                """)
-                conn.execute(upsert_sql, vals)
+            conn.execute(upsert_sql, records)
             conn.commit()
     except Exception as e:
         logger.warning(f"PG write_macro_hsgt error: {e}")

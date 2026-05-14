@@ -7,13 +7,13 @@ import streamlit as st
 def page_header(title, subtitle="", icon=""):
     """统一的页面头部组件"""
     sub_html = f"<span style='color:#64748b; font-size:0.85rem; margin-left:12px;'>{subtitle}</span>" if subtitle else ""
-    st.markdown(f"""
+    st.html(f"""
 <div style="margin-bottom: 16px;">
     <div style="font-family: 'Outfit', sans-serif; font-size: 1.5rem; font-weight: 700; color: #f1f5f9;">
         {icon} {title}{sub_html}
     </div>
 </div>
-""", unsafe_allow_html=True)
+""")
 
 
 def stock_context_bar(name_map):
@@ -21,7 +21,7 @@ def stock_context_bar(name_map):
     current = st.session_state.get('selected_stock', '601318')
     cur_name = name_map.get(current, '')
 
-    st.markdown(f"""
+    st.html(f"""
 <div style="background: rgba(30,41,59,0.35); border: 1px solid rgba(255,255,255,0.05);
      border-radius: 10px; padding: 6px 16px; margin-bottom: 12px;
      display: flex; align-items: center; gap: 10px; font-size: 0.82rem;">
@@ -29,7 +29,7 @@ def stock_context_bar(name_map):
     <span style="color: #38bdf8; font-weight: 600;">{current}</span>
     <span style="color: #94a3b8;">{cur_name}</span>
 </div>
-""", unsafe_allow_html=True)
+""")
 
 
 def stock_selector(label="分析标的", key_suffix="default"):
@@ -68,20 +68,20 @@ def info_card(title, value, subtitle="", icon="", color="#38bdf8"):
     """Glassmorphism 信息卡片 — 利用 CSS .ssm-card 样式"""
     icon_html = f'<span style="font-size:1.4rem; margin-right:8px;">{icon}</span>' if icon else ''
     sub_html = f'<div class="ssm-card-sub">{subtitle}</div>' if subtitle else ''
-    st.markdown(f'''<div class="ssm-card">
+    st.html(f'''<div class="ssm-card">
     <div class="ssm-card-title">{icon_html}{title}</div>
     <div class="ssm-card-value" style="color:{color};">{value}</div>
     {sub_html}
-</div>''', unsafe_allow_html=True)
+</div>''')
 
 
 def empty_state(icon="📋", title="暂无数据", description="", action_label=None, action_key=None):
     """空状态占位面板 — 居中图标 + 说明文字 + 可选操作按钮"""
-    st.markdown(f'''<div class="empty-state">
+    st.html(f'''<div class="empty-state">
     <div class="empty-state-icon">{icon}</div>
     <div class="empty-state-title">{title}</div>
     <div class="empty-state-desc">{description}</div>
-</div>''', unsafe_allow_html=True)
+</div>''')
     if action_label and action_key:
         _, center, _ = st.columns([2, 1, 2])
         with center:
@@ -102,7 +102,7 @@ def card_container(title, subtitle="", icon="", color="#38bdf8"):
     """
     import streamlit as st
     icon_html = f'<span style="font-size:1.3rem; margin-right:8px;">{icon}</span>' if icon else ''
-    st.markdown(f"""
+    st.html(f"""
     <div style="margin-top: 24px; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.06);">
         <div style="font-family: 'Outfit', sans-serif; font-size: 1.1rem; font-weight: 700; color: #f1f5f9; display: flex; align-items: center;">
             {icon_html}{title}
@@ -111,6 +111,6 @@ def card_container(title, subtitle="", icon="", color="#38bdf8"):
             {subtitle}
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    """)
     return st.container()
 

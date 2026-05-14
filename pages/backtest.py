@@ -3,6 +3,10 @@
 参数面板 + 结果仪表盘 + 跨页导航
 """
 import streamlit as st
+try:
+    from utils.html_renderer import render_html
+except ImportError:
+    render_html = lambda h: st.html(h)
 import datetime as dt
 from modules.data_loader import fetch_kline
 from modules.backtest.backtest_engine import BacktestEngine, StrategyTemplate
@@ -83,11 +87,11 @@ def render(L):
                     if result.get('daily_values') and create_performance_chart:
                         st.markdown("##### 📈 净值曲线")
                         fig = create_performance_chart(result['daily_values'],
-                                                       theme=st.session_state['theme'])
+                                                       theme=st.session_state.get('theme', 'dark'))
                         st.plotly_chart(fig, use_container_width=True)
 
                     # ---- 策略摘要卡片 ----
-                    st.markdown(f'''<div class="ssm-card" style="margin-top:12px;">
+                    st.html(f'''<div class="ssm-card" style="margin-top:12px;">
                         <div class="ssm-card-title">📋 策略摘要</div>
                         <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px;
                              font-size:0.85rem; color:#cbd5e1; margin-top:8px;">
@@ -98,7 +102,7 @@ def render(L):
                             <div>回测周期: <strong style="color:#f1f5f9">{start_date} → {end_date}</strong></div>
                             <div>数据点: <strong style="color:#f1f5f9">{len(kline)}</strong></div>
                         </div>
-                    </div>''', unsafe_allow_html=True)
+                    </div>''')
 
                 else:
                     status.update(label="❌ 回测失败", state="error")

@@ -87,7 +87,7 @@ def _render_market_bar():
             f'<span style="color:#334155;">|</span>'
         )
 
-    st.markdown(f'<div class="market-bar">{items_html}</div>', unsafe_allow_html=True)
+    st.html(f'<div class="market-bar">{items_html}</div>')
 
     # 风控警报
     avg_drop = ov['涨跌幅'].mean()
@@ -214,7 +214,7 @@ def _render_stock_card(code, stock_name, price, change, rank=0, extra="",
         f'</div>'
     )
     
-    st.markdown(card_html, unsafe_allow_html=True)
+    st.html(card_html)
 
     # 底部操作按钮 (使用 PRO_SSM_V7_ 唯一 Key)
     c1, c2, c3 = st.columns([1, 1, 1])
@@ -562,7 +562,7 @@ def _render_track_view(L, my_stocks, name_map):
                       '<div style="font-size:1rem;font-weight:600;color:#94a3b8;margin-bottom:6px;">还没有自选股</div>'
                       '<div style="font-size:0.82rem;">在「📋 选股」中挑选标的，点击 ⭐ 即可加入自选</div>'
                       '</div>')
-        st.markdown(empty_html, unsafe_allow_html=True)
+        st.html(empty_html)
         return
 
     # 排序选项 + 数量
@@ -729,16 +729,30 @@ def _get_quick_signals(code: str) -> dict:
         elif score <= -5: tags.append("⚠️ 风险提示")
         
         rsi_val = q_metrics.get('rsi', 50)
-        if rsi_val < 30: tags.append("🟢 RSI超卖")
-        elif rsi_val > 75: tags.append("🔴 RSI超买")
+        if rsi_val <= 25: tags.append("🔮 极度超卖(底部反转?)")
+        elif 25 < rsi_val <= 30: tags.append("🟢 RSI超卖(寻底)")
+        elif rsi_val >= 80: tags.append("🌪️ 极度超买(见顶风险)")
+        elif 75 <= rsi_val < 80: tags.append("🔴 RSI超买(高位)")
         
-        if vol_ratio > 1.8: tags.append("🔥 放量突破")
-        elif vol_ratio < 0.6: tags.append("❄️ 缩量调整")
+        if vol_ratio > 2.5: tags.append("🌋 巨量爆发")
+        elif vol_ratio > 1.5: tags.append("🔥 放量突破")
+        elif vol_ratio < 0.5: tags.append("🧊 极致地量")
+        elif vol_ratio < 0.7: tags.append("❄️ 缩量洗盘")
         
-        if day_change > 4: tags.append("🚀 走势强劲")
+        if day_change > 7: tags.append("🚀 火箭发射")
+        elif day_change > 3: tags.append("📈 走势强劲")
+        elif day_change < -7: tags.append("🩸 瀑布下跌")
+        elif day_change < -3: tags.append("📉 弱势回调")
         
         # 补充均线位置
-        if ma_pos == '多头': tags.append("📈 趋势多头")
+        if ma_pos == '多头': 
+            tags.append("🛡️ 均线多头(支撑强)")
+        elif q_metrics.get('ma_trend') == 'down':
+            tags.append("🥀 均线空头(阻力大)")
+            
+        macd_val = q_metrics.get('macd_hist', 0)
+        if macd_dir == '红轴' and macd_val > 0.1: tags.append("🐉 MACD强多头")
+        elif macd_dir == '绿轴' and macd_val < -0.1: tags.append("🐻 MACD强空头")
 
         return {
             'status': status, 'buy': buy, 'sell': '一般' if score > -3 else '风险', 
@@ -749,8 +763,7 @@ def _get_quick_signals(code: str) -> dict:
         }
     except Exception:
         return default
-    except Exception:
-        return default
+
 # ============================================================
 #  批量信号处理引擎 (Batch Intelligence Engine)
 # ============================================================
@@ -783,13 +796,45 @@ def _render_generic_strategy_tab(key, df, my_stocks, name_map):
     for s_data in all_signals.values():
         all_available_tags.update(s_data.get('tags', []))
     
-    # 3. 过滤 UI
-    col_f1, col_f2 = st.columns([4, 1])
-    with col_f1:
-        f_tags = st.multiselect("🔍 标签过滤 (多选并集)", sorted(list(all_available_tags)), 
-                               key=f"filter_{key}", help="仅显示包含所选标签的标的")
-    with col_f2:
-        st.markdown(f'<div style="text-align:right; color:#64748b; padding-top:28px;">{len(df)} 支</div>', unsafe_allow_html=True)
+    # 3. 策略组合与过滤 UI
+    st.markdown("---")
+    sc1, sc2, sc3 = st.columns([1.5, 3, 1])
+    
+    preset_strategies = {
+        "💡 自定义 (不套用)": [],
+        "🎣 抄底猎手 (寻找超跌错杀)": ["🔮 极度超卖(底部反转?)", "🟢 RSI超卖(寻底)", "🧊 极致地量"],
+        "🚀 突破跟随 (右侧追击)": ["🌋 巨量爆发", "🔥 放量突破", "🚀 火箭发射", "📈 走势强劲", "🐉 MACD强多头"],
+        "💎 价值低吸 (多头回调)": ["💎 机构看好", "🛡️ 均线多头(支撑强)", "❄️ 缩量洗盘", "🟢 RSI超卖(寻底)"],
+        "⚠️ 短线避险 (规避高位空头)": ["🌪️ 极度超买(见顶风险)", "🔴 RSI超买(高位)", "🐻 MACD强空头", "🥀 均线空头(阻力大)", "⚠️ 风险提示"]
+    }
+    
+    with sc1:
+        st.markdown("<p style='font-size:0.85rem; color:#94a3b8; margin-bottom:2px;'>👑 一键策略组合</p>", unsafe_allow_html=True)
+        selected_preset = st.selectbox(
+            "一键策略组合", 
+            list(preset_strategies.keys()), 
+            label_visibility="collapsed",
+            key=f"preset_{key}"
+        )
+        
+    with sc2:
+        st.markdown("<p style='font-size:0.85rem; color:#94a3b8; margin-bottom:2px;'>🔍 标签过滤 (多选并集)</p>", unsafe_allow_html=True)
+        
+        # 如果选择了某个策略，自动抽出相关存在于当前标的中的标签
+        preset_tags = preset_strategies[selected_preset]
+        default_tags = [t for t in preset_tags if t in all_available_tags] if preset_tags else []
+        
+        f_tags = st.multiselect(
+            "标签过滤", 
+            sorted(list(all_available_tags)), 
+            default=default_tags,
+            key=f"filter_{key}", 
+            label_visibility="collapsed",
+            help="仅显示包含所选标签的标的. '一键策略'会自动帮你勾选有关联的标签！"
+        )
+        
+    with sc3:
+        st.markdown(f'<div style="text-align:right; color:#64748b; margin-top:30px;">总计 {len(df)} 支</div>', unsafe_allow_html=True)
 
     # 4. 执行过滤
     display_df = df

@@ -439,8 +439,8 @@ class SmartAlertSystem:
         self.alert_id_counter = 0
         self.subscribers = defaultdict(list)  # symbol -> list of callbacks
         self.ai = get_ai_manager()
-        import concurrent.futures
-        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
+        self.ai = get_ai_manager()
+        # 移除 ThreadPoolExecutor，避免在 Streamlit 页面不停刷新时导致严重的线程泄漏与无响应
     
     def generate_alert(self, event: AnomalyEvent) -> Alert:
         """从异常事件生成智能提醒 (异步增强)"""
@@ -461,9 +461,13 @@ class SmartAlertSystem:
         )
         self.alerts.append(alert)
         
-        # 异步启动 AI 润色
-        self.executor.submit(self._async_enrich_alert, alert, event)
-        
+        # 为了稳定，直接同步流式获取或暂不深度润色（在前端实时拦截环境里）
+        # 如果必须后台处理，应交由 Celery Beat
+        # 这里改为同步获取简版
+        smart_msg = self._generate_smart_message(event)
+        if smart_msg:
+            alert.message = smart_msg
+            
         self._notify_subscribers(event.symbol, alert)
         return alert
 

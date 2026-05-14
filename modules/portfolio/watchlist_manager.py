@@ -1,5 +1,7 @@
 import json
 import os
+import streamlit as st
+from database.models import get_db, UserPortfolio
 from typing import List, Dict, Optional
 from dataclasses import dataclass, asdict
 from datetime import datetime
@@ -28,32 +30,51 @@ class Portfolio:
     total_return: float = 0.0
 
 class WatchlistManager:
-    """自选股组合管理器"""
+    """自选股组合管理器(PostgreSQL版)"""
     
-    def __init__(self, data_dir: str = "./data/portfolios"):
-        self.data_dir = data_dir
-        os.makedirs(data_dir, exist_ok=True)
+    def __init__(self, data_dir: str = None, user_id: str = None):
+        if not user_id:
+            try:
+                # 尝试从 Streamlit 拿
+                import streamlit as st
+                # check if st context exists
+                if st.runtime.exists():
+                    user_id = st.session_state.get('user_id', 'default_user')
+                else:
+                    user_id = 'default_user'
+            except Exception:
+                user_id = 'default_user'
+                
+        self.user_id = user_id
+        try:
+            self.db_manager = get_db()
+        except:
+            pass
         self.portfolios = self._load_all_portfolios()
     
     def _load_all_portfolios(self) -> Dict[str, Portfolio]:
-        """加载所有组合"""
+        """从数据库加载用户的组合"""
         portfolios = {}
-        if os.path.exists(self.data_dir):
-            for filename in os.listdir(self.data_dir):
-                if filename.endswith('.json'):
-                    with open(os.path.join(self.data_dir, filename), 'r') as f:
-                        data = json.load(f)
-                        # 将 stocks 中的 dict 转为 StockPosition 对象
-                        if 'stocks' in data and data['stocks']:
-                            data['stocks'] = [
-                                StockPosition(**s) if isinstance(s, dict) else s
-                                for s in data['stocks']
-                            ]
-                        portfolios[data['id']] = Portfolio(**data)
+        try:
+            db_portfolios = self.db_manager.get_user_portfolios(self.user_id)
+            for db_p in db_portfolios:
+                stocks_data = db_p.stocks or []
+                stocks = [StockPosition(**s) if isinstance(s, dict) else s for s in stocks_data]
+                
+                p = Portfolio(
+                    id=db_p.id,
+                    name=db_p.name,
+                    description=db_p.description or "",
+                    stocks=stocks,
+                    created_at=db_p.created_at.isoformat() if db_p.created_at else "",
+                    updated_at=db_p.updated_at.isoformat() if db_p.updated_at else ""
+                )
+                portfolios[p.id] = p
+        except Exception as e:
+            print("DB Load Portfolio Error:", e)
         return portfolios
     
     def create_portfolio(self, name: str, description: str = "") -> Portfolio:
-        """创建新组合"""
         portfolio_id = f"portfolio_{datetime.now().strftime('%Y%m%d%H%M%S')}"
         portfolio = Portfolio(
             id=portfolio_id,
@@ -108,10 +129,16 @@ class WatchlistManager:
     def delete_portfolio(self, portfolio_id: str):
         """删除组合"""
         if portfolio_id in self.portfolios:
-            filepath = os.path.join(self.data_dir, f"{portfolio_id}.json")
-            if os.path.exists(filepath):
-                os.remove(filepath)
             del self.portfolios[portfolio_id]
+            try:
+                session = self.db_manager.get_session()
+                pf = session.query(UserPortfolio).filter_by(id=portfolio_id).first()
+                if pf:
+                    session.delete(pf)
+                    session.commit()
+                session.close()
+            except Exception as e:
+                pass
     
     def update_portfolio(self, portfolio_id: str, name: str = None, description: str = None):
         """更新组合信息"""
@@ -134,7 +161,15 @@ class WatchlistManager:
         return []
     
     def _save_portfolio(self, portfolio: Portfolio):
-        """保存组合到文件"""
-        filepath = os.path.join(self.data_dir, f"{portfolio.id}.json")
-        with open(filepath, 'w') as f:
-            json.dump(asdict(portfolio), f, ensure_ascii=False, indent=2)
+        """保存组合到数据库"""
+        try:
+            stocks_dict = [asdict(s) for s in portfolio.stocks]
+            self.db_manager.save_portfolio(
+                portfolio_id=portfolio.id,
+                user_id=self.user_id,
+                name=portfolio.name,
+                description=portfolio.description,
+                stocks=stocks_dict
+            )
+        except Exception as e:
+            print("DB Save Portfolio Error:", e)

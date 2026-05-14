@@ -3,6 +3,10 @@
 彩色预警卡片 + 统计仪表盘 + 状态徽章
 """
 import streamlit as st
+try:
+    from utils.html_renderer import render_html
+except ImportError:
+    render_html = lambda h: st.html(h)
 import pandas as pd
 from modules.alerts.alert_system import AlertManager, AlertType
 from components.ui_components import (
@@ -63,7 +67,7 @@ def render(L):
 
                 card_col, action_col = st.columns([5, 1])
                 with card_col:
-                    st.markdown(f'''<div style="background: rgba(30,41,59,0.35);
+                    st.html(f'''<div style="background: rgba(30,41,59,0.35);
                         border: 1px solid rgba(255,255,255,0.06);
                         border-left: 4px solid {color};
                         border-radius: 12px; padding: 14px 18px; margin: 3px 0;
@@ -81,7 +85,7 @@ def render(L):
                             <span>触发: <strong style="color:#e2e8f0;">{a.trigger_count}次</strong></span>
                             <span>创建: {str(a.created_at)[:16]}</span>
                         </div>
-                    </div>''', unsafe_allow_html=True)
+                    </div>''')
 
                 with action_col:
                     if st.button("🗑️", key=f"del_alert_{i}_{a.symbol}",
@@ -109,10 +113,10 @@ def render(L):
             # 预览
             if symbol and alert_type:
                 preview_color, _ = _alert_level_color(alert_type[1].value)
-                st.markdown(f'''<div style="background:rgba(30,41,59,0.3); border-radius:8px;
+                st.html(f'''<div style="background:rgba(30,41,59,0.3); border-radius:8px;
                     padding:8px 14px; font-size:0.82rem; border-left:3px solid {preview_color}; margin-top:4px;">
                     📌 预览: 当 <strong>{symbol}</strong> {alert_type[0]} <strong>{threshold}</strong> 时触发
-                </div>''', unsafe_allow_html=True)
+                </div>''')
 
             submitted = st.form_submit_button("✨ 创建预警", type="primary", use_container_width=True)
             if submitted:

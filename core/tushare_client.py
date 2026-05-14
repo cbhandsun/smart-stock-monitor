@@ -444,19 +444,33 @@ class TushareClient:
     # ---- 当日全市场行情 ----
 
     def get_daily_snapshot(self, trade_date: str = None) -> Optional[pd.DataFrame]:
-        """获取全市场当日行情 (替代 fetch_sina_market_snapshot)"""
+        """获取全市场当日行情及基本面指标 (替代 fetch_sina_market_snapshot)"""
         if not self.available:
             return None
         try:
             self._rate_limit()
-            if not trade_date:
-                trade_date = datetime.now().strftime('%Y%m%d')
-            df = self.pro.daily(trade_date=trade_date)
+            target_date = trade_date if trade_date else datetime.now().strftime('%Y%m%d')
+            df = self.pro.daily(trade_date=target_date)
+            
+            # 如果当日没数据（可能还没收盘），取昨日
             if df is None or df.empty:
-                yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y%m%d')
+                target_date = (datetime.now() - timedelta(days=1)).strftime('%Y%m%d')
                 self._rate_limit()
-                df = self.pro.daily(trade_date=yesterday)
-            return df if df is not None and not df.empty else None
+                df = self.pro.daily(trade_date=target_date)
+            
+            if df is not None and not df.empty:
+                # 合并 daily_basic 获取 PE, PB 等每日指标
+                try:
+                    self._rate_limit()
+                    df_basic = self.pro.daily_basic(trade_date=target_date)
+                    if df_basic is not None and not df_basic.empty:
+                        # 左连接，只提取需要的关键字段
+                        df_basic = df_basic[['ts_code', 'pe', 'pb', 'pe_ttm', 'turnover_rate', 'turnover_rate_f', 'total_mv', 'circ_mv']]
+                        df = pd.merge(df, df_basic, on='ts_code', how='left')
+                except Exception as e:
+                    logger.warning(f"Tushare daily_basic merge error: {e}")
+                return df
+            return None
         except Exception as e:
             logger.error(f"Tushare daily_snapshot error: {e}")
             return None

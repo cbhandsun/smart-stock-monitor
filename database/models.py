@@ -21,6 +21,20 @@ class StockData(Base):
     turnover = Column(Float)
     created_at = Column(DateTime, default=datetime.now)
 
+class User(Base):
+    """用户认证与配置表"""
+    __tablename__ = 'users'
+    
+    id = Column(String(50), primary_key=True)
+    username = Column(String(50), unique=True, index=True, nullable=False)
+    email = Column(String(100), unique=True, index=True, nullable=False)
+    password_hash = Column(String(200), nullable=False)
+    created_at = Column(String(50), nullable=False)  # keeping string matching dict format or datetime
+    last_login = Column(String(50), nullable=True)
+    preferences = Column(JSON, default={})
+    is_active = Column(Boolean, default=True)
+    is_admin = Column(Boolean, default=False)
+
 class UserPortfolio(Base):
     """用户投资组合表"""
     __tablename__ = 'user_portfolios'

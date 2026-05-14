@@ -1,16 +1,12 @@
 import os
 import logging
-import glob
 import pandas as pd
 import streamlit as st
 import requests
-import time
 import re
 import datetime
-import json
 import concurrent.futures
 # 延迟导入 data_loader (akshare 很重, 首屏不需要)
-# from modules.data_loader import fetch_trading_signals, fetch_kline
 def fetch_trading_signals(*a, **kw):
     from modules.data_loader import fetch_trading_signals as _f
     return _f(*a, **kw)
@@ -32,49 +28,12 @@ try:
 except Exception:
     _redis = None
 
-CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "cache")
-os.makedirs(CACHE_DIR, exist_ok=True)
-
-def cleanup_old_cache(max_age_days=7):
-    """清理过期缓存文件"""
-    now = time.time()
-    removed = 0
-    for f in glob.glob(os.path.join(CACHE_DIR, "*.json")):
-        if now - os.path.getmtime(f) > max_age_days * 86400:
-            try:
-                os.remove(f)
-                removed += 1
-            except OSError as e:
-                logger.warning(f"清理缓存文件失败 {f}: {e}")
-    if removed:
-        logger.info(f"已清理 {removed} 个过期缓存文件")
+# 文件缓存 L2 (已封装到 core/file_cache.py)
+from core.file_cache import load_from_cache, save_to_cache, cleanup_old_cache
 
 # 启动时自动清理过期缓存
 cleanup_old_cache()
 
-def get_cache_path(key):
-    date_str = datetime.datetime.now().strftime("%Y-%m-%d")
-    return os.path.join(CACHE_DIR, f"{key}_{date_str}.json")
-
-def load_from_cache(key):
-    path = get_cache_path(key)
-    if os.path.exists(path):
-        try:
-            with open(path, 'r') as f:
-                data = json.load(f)
-                return pd.DataFrame(data)
-        except (json.JSONDecodeError, ValueError, KeyError) as e:
-            logger.warning(f"缓存读取失败 {path}: {e}")
-    return None
-
-def save_to_cache(key, df):
-    if df is None or df.empty: return
-    path = get_cache_path(key)
-    try:
-        # Convert to records to avoid orientation issues
-        df.to_json(path, orient='records', force_ascii=False)
-    except Exception as e:
-        logger.warning(f"缓存写入失败 {path}: {e}")
 
 @st.cache_data(ttl=60, show_spinner=False)
 def get_market_overview():
@@ -161,7 +120,8 @@ def get_full_market_data():
                     lambda x: name_map.get(x.split('.')[0], x))
                 snap.rename(columns={
                     'ts_code': '代码', 'pct_chg': '涨跌幅',
-                    'close': '最新价', 'vol': '成交量', 'amount': '成交额'
+                    'close': '最新价', 'vol': '成交量', 'amount': '成交额',
+                    'pe': '市盈率', 'pb': '市净率', 'turnover_rate': '换手率'
                 }, inplace=True)
                 snap['代码'] = snap['代码'].apply(lambda x: x.split('.')[0])
                 df = snap
@@ -200,6 +160,34 @@ def find_value_stocks(pe_max=25, pb_max=2.5):
     # 向量化过滤 (Pandas 已经很快，主要是后续逻辑提速)
     pe_col = '市盈率' if '市盈率' in df.columns else '市盈率-动态'
     pb_col = '市净率'
+    
+    # 检查是否有必要列缺失 (如 Tushare 接口返回的快照)
+    if pe_col not in df.columns or pb_col not in df.columns:
+        try:
+            import akshare as ak
+            df = ak.stock_zh_a_spot_em()
+            pe_col = '市盈率' if '市盈率' in df.columns else '市盈率-动态'
+            if pb_col not in df.columns:
+                raise ValueError("AkShare missing pb")
+        except Exception as e:
+            logger.warning(f"AkShare fallback failed in find_value_stocks: {e}")
+            try:
+                # 再次兜底：使用 Sina
+                pages = []
+                for p in range(1, 4):
+                    pdf = fetch_sina_market_snapshot(page=p)
+                    if not pdf.empty: pages.append(pdf)
+                if pages:
+                    df = pd.concat(pages, ignore_index=True)
+                    pe_col = '市盈率'
+                else:
+                    return pd.DataFrame()
+            except Exception:
+                return pd.DataFrame()
+        
+        if pe_col not in df.columns or pb_col not in df.columns:
+            return pd.DataFrame()
+            
     df[pe_col] = pd.to_numeric(df[pe_col], errors='coerce')
     df[pb_col] = pd.to_numeric(df[pb_col], errors='coerce')
     mask = (df[pe_col] > 0) & (df[pe_col] < pe_max) & (df[pb_col] > 0) & (df[pb_col] < pb_max)
@@ -244,8 +232,6 @@ def find_growth_stocks():
         logger.warning(f"成长股筛选失败: {e}")
         return pd.DataFrame()
 
-    except Exception as e: return f"AI 诊断模块加载失败: {e}"
-
 def generate_ai_report_stream(symbol, name, full_symbol):
     """
     流式生成 AI 报告，内部采用并发数据抓取提速，并注入内部量化评分
@@ -254,15 +240,13 @@ def generate_ai_report_stream(symbol, name, full_symbol):
         from core.ai_client import call_ai_for_stock_diagnosis_stream
         from pages.market import _get_quick_signals
         
-        # 1. 并发抓取基本面与技术面数据
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-            future_reports = executor.submit(get_stock_reports, symbol)
-            future_signals = executor.submit(get_trading_signals, full_symbol)
-            future_dna = executor.submit(_get_quick_signals, symbol)
-            
-            reports_df = future_reports.result()
-            signals = future_signals.result()
-            dna_data = future_dna.result()
+        # 1. 顺序抓取避免 Streamlit 线程上下文丢失引发的 'AI 流式诊断模块加载失败' 的Bug
+        reports_df = get_stock_reports(symbol)
+        signals = get_trading_signals(full_symbol)
+        try:
+            dna_data = _get_quick_signals(symbol)
+        except Exception:
+            dna_data = {}
             
         # 2. 传递 DNA 评分与标签到 AI (统一结论)
         dna_score = dna_data.get('score', 0)

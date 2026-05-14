@@ -83,7 +83,7 @@ def _init_ai_portfolios():
                 watchlist_manager.add_stock(new_p.id, symbol=sym, name=name_map.get(sym, sym), tags=["AI", sector_key])
 
 def render(L, my_stocks, name_map):
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.html("<br>")
     st.markdown(f"### 📡 AI Sector Tracker (人工智能核心赛道雷达)")
     st.caption("实时跟踪 A 股核心 AI 子板块龙头，捕捉产业链轮动带来的买卖共振点。")
     st.info("💡 提示：AI 赛道已融入「📡 市场信号流」的策略选股视图，可在那里使用完整的 选股→分析→跟盘 流程。")
@@ -105,7 +105,7 @@ def render(L, my_stocks, name_map):
 
     for i, p in enumerate(ai_portfolios):
         with tabs[i]:
-            st.markdown(f"<p style='color: #94a3b8; font-size: 0.95rem; line-height: 1.6;'>{p.description}</p>", unsafe_allow_html=True)
+            st.html(f"<p style='color: #94a3b8; font-size: 0.95rem; line-height: 1.6;'>{p.description}</p>")
             
             symbols = [s.symbol for s in p.stocks]
             if not symbols:
