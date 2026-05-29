@@ -6,6 +6,8 @@ import requests
 import re
 import datetime
 import concurrent.futures
+import time
+import json
 # 延迟导入 data_loader (akshare 很重, 首屏不需要)
 def fetch_trading_signals(*a, **kw):
     from modules.data_loader import fetch_trading_signals as _f

@@ -1,6 +1,17 @@
 import akshare as ak
 import pandas as pd
+import sys
+import os
 from datetime import datetime
+
+os.environ.pop("HTTP_PROXY", None)
+os.environ.pop("HTTPS_PROXY", None)
+os.environ.pop("http_proxy", None)
+os.environ.pop("https_proxy", None)
+os.environ.pop("all_proxy", None)
+
+# Add the project root to sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 def generate_report():
     print(f"[{datetime.now()}] 正在生成每日盘后研报...")
