@@ -218,3 +218,17 @@ def sync_market_valuation():
         return "No valuation data found for recent days"
     except Exception as e:
         return f"Valuation sync error: {str(e)}"
+
+
+@shared_task(name='tasks.market_data.update_global_market_data')
+def update_global_market_data():
+    """定期同步并缓存全球市场数据 (美股指数、SOX、外汇等)"""
+    try:
+        from utils.global_market_data import get_global_realtime_data, get_global_history_data
+        # 强制刷新并预热缓存
+        rt = get_global_realtime_data()
+        hist = get_global_history_data(limit=30)
+        return f"Global market data updated: {len(rt)} realtime entries, {len(hist)} history dataframes"
+    except Exception as e:
+        return f"Global market update error: {str(e)}"
+

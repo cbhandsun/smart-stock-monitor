@@ -3,6 +3,8 @@ import streamlit as st
 from utils.html_renderer import render_html
 import pandas as pd
 from datetime import datetime
+from utils.global_market_data import get_global_realtime_data
+
 
 
 _GRADE = {
@@ -54,6 +56,9 @@ def _stock_card(row, rank, my_stocks):
 
     s_strat = row["策略分"]; s_sec = row["赛道分"]
     s_tech = row["技术分"]; s_res = row["共振加成"]
+    s_sent = row.get("舆情分", 0.0)
+    s_us = row.get("美股溢价", 0.0)
+    s_glob = row.get("全球折价", 0.0)
 
     tags = "".join(
         f'<span style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);'
@@ -92,9 +97,12 @@ def _stock_card(row, rank, my_stocks):
         <span>综合评分 {score}</span><span style="color:{m['color']};font-weight:700;">{score}/20.0</span>
       </div>
       {_score_bar(score, 20, m['color'])}
-      <div style="display:flex;gap:8px;margin-top:6px;font-size:0.62rem;color:#475569;">
+      <div style="display:flex;gap:8px;margin-top:6px;font-size:0.62rem;color:#475569;flex-wrap:wrap;">
         <span>策略{s_strat}</span><span>赛道{s_sec}</span>
         <span>技术{s_tech}</span><span style="color:#f59e0b;">+共振{s_res}</span>
+        <span style="color:#38bdf8;">+舆情{s_sent:+.1f}</span>
+        <span style="color:#a855f7;">+美股溢价{s_us:+.1f}</span>
+        <span style="color:#ef4444;">全球折价{s_glob:+.1f}</span>
       </div>
     </div>
     <div style="text-align:right;">
@@ -108,6 +116,11 @@ def _stock_card(row, rank, my_stocks):
   <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-top:1px solid rgba(255,255,255,0.04);padding-top:8px;margin-top:4px;">
     {'<span style="background:' + sec_color + '15;color:' + sec_color + ';border:1px solid ' + sec_color + '40;border-radius:5px;font-size:0.68rem;padding:2px 7px;white-space:nowrap;">' + sec_name + f' 景气{boom}/10</span>' if sec_name != "—" else ""}
     <span style="font-size:0.72rem;color:#64748b;font-style:italic;flex:1;">{reason}</span>
+  </div>
+  
+  <div style="font-size:0.68rem;color:#64748b;margin-top:6px;padding:6px;background:rgba(255,255,255,0.02);border-radius:6px;border:1px solid rgba(255,255,255,0.03);">
+    {f'🌎 <b>美股映射</b>：{row.get("美股理由")}<br>' if row.get("美股理由") else ""}
+    {f'📰 <b>舆情风向</b>：<span style="color:#38bdf8;font-weight:700;">[{row.get("舆情标签")}]</span> {row.get("舆情理由")}' if row.get("舆情理由") else ""}
   </div>
   {f'<div style="font-size:0.7rem;color:#475569;margin-top:5px;padding:4px 8px;background:rgba(56,189,248,0.04);border-radius:4px;">⚡ {catalyst}</div>' if catalyst else ""}
 </div>"""
@@ -327,6 +340,62 @@ border-radius:10px;padding:14px 18px;margin-bottom:12px;">
     if stocks_df.empty:
         st.info("暂无推荐数据，请在交易时段内使用或点击刷新")
         return
+
+    # ── 🌎 全球宏观雷达与美股映射卡片 ──────────────────────────────────────
+    rt = get_global_realtime_data()
+    premiums = summary.get("global_premiums", {})
+    
+    if rt:
+        def format_item(name, data):
+            if not data: return ""
+            price = data["price"]
+            chg = data["change_pct"]
+            color = "#f43f5e" if chg >= 0 else "#10b981"
+            sign = "+" if chg >= 0 else ""
+            return (
+                f'<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);'
+                f'border-radius:8px;padding:10px;text-align:center;min-width:110px;flex:1;">'
+                f'<div style="font-size:0.65rem;color:#64748b;margin-bottom:2px;">{name}</div>'
+                f'<div style="font-size:0.95rem;font-weight:700;color:#f1f5f9;font-family:monospace;">{price:,.2f}</div>'
+                f'<div style="font-size:0.68rem;color:{color};font-weight:600;">{sign}{chg:.2f}%</div>'
+                f'</div>'
+            )
+        
+        items_list = []
+        for key, name in [("纳斯达克", "NASDAQ"), ("标普500", "S&P 500"), ("费城半导体SOX", "SOX半导体"), ("恐慌指数VIXY", "VIXY(恐慌)"), ("离岸人民币", "USD/CNH"), ("A50期货", "A50期指")]:
+            if key in rt:
+                items_list.append(format_item(name, rt[key]))
+        
+        items_html = "".join(items_list)
+        sent_desc = premiums.get("market_sentiment", {}).get("reason", "全球市场宏观流动性整体平稳。")
+        sent_score = premiums.get("market_sentiment", {}).get("score", 0.0)
+        risk_disc = premiums.get("risk_discount", 0.0)
+        fx_disc = premiums.get("fx_discount", 0.0)
+        
+        sent_color = "#f43f5e" if sent_score >= 0 else "#10b981"
+        
+        radar_html = f"""
+<div style="background:linear-gradient(135deg,rgba(10,20,45,0.92),rgba(12,22,48,0.96));
+  border:1px solid rgba(255,255,255,0.06);border-radius:12px;padding:14px;margin-bottom:15px;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;border-bottom:1px solid rgba(255,255,255,0.05);padding-bottom:6px;">
+    <span style="font-size:0.8rem;font-weight:800;color:#38bdf8;letter-spacing:0.5px;">🌎 全球宏观雷达与美股映射联动 (GLOBAL REGIME)</span>
+    <span style="font-size:0.65rem;color:#475569;">隔夜与外汇实时传导</span>
+  </div>
+  
+  <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:10px;justify-content:space-between;flex-wrap:wrap;">
+    {items_html}
+  </div>
+  
+  <div style="font-size:0.72rem;line-height:1.5;color:#94a3b8;background:rgba(56,189,248,0.03);border:1px solid rgba(56,189,248,0.08);border-radius:8px;padding:8px 12px;">
+    📢 <b>情绪传导评述</b>：{sent_desc} <br>
+    ⚖️ <b>全球溢折修正</b>：
+    美股开盘情绪 <span style="color:{sent_color};font-weight:700;">{sent_score:+.2f}分</span> | 
+    VIX风险偏好折价 <span style="color:#ef4444;font-weight:700;">{risk_disc:+.2f}分</span> | 
+    汇率资本流动折价 <span style="color:#10b981;font-weight:700;">{fx_disc:+.2f}分</span>
+  </div>
+</div>
+"""
+        st.html(radar_html)
 
     # ── 顶部统计 ─────────────────────────────────────────────────
     kc = st.columns(5)

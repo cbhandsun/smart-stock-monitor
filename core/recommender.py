@@ -104,6 +104,11 @@ def run_recommendation_engine(top_n: int = 30) -> dict:
         find_mainforce_stocks, find_northbound_top,
         find_tech_breakout, find_hotspot_stocks, HOTSPOT_2026
     )
+    from modules.us_transmission import calculate_us_transmission_premiums
+    from modules.sentiment.sentiment_analyzer import analyze_stock_sentiment
+
+    # ── Step 0: 计算全球宏观与美股传导溢价 ──────────────────────────────
+    premiums = calculate_us_transmission_premiums()
 
     # ── Step 1: 构建赛道→股票反查表 ──────────────────────────────
     # code -> {sector_key, sector_name, sector_color, sector_weight, boom_score, thesis, catalyst}
@@ -163,9 +168,9 @@ def run_recommendation_engine(top_n: int = 30) -> dict:
         if code not in all_data:
             all_data[code] = {"代码": code, "名称": code, "最新价": 0, "涨跌幅": 0}
 
-    # ── Step 3: 四维评分 ─────────────────────────────────────────
+    # ── Step 3: 第一轮粗选评分 (无舆情情感分析) ──────────────────────────────
     all_codes = set(all_data.keys())
-    score_map: dict[str, dict] = {}
+    first_pass_map: dict[str, dict] = {}
 
     for code in all_codes:
         row = all_data.get(code, {})
@@ -177,6 +182,7 @@ def run_recommendation_engine(top_n: int = 30) -> dict:
 
         # 维度2：赛道分（景气度 × 赛道权重）
         sec_info = code_to_sector.get(code, {})
+        sec_key = sec_info.get("sector_key", "")
         boom = sec_info.get("boom_score", 0)
         sec_weight = sec_info.get("sector_weight", 0)
         sector_score = (boom / 10.0) * sec_weight if sec_info else 0.0
@@ -203,19 +209,63 @@ def run_recommendation_engine(top_n: int = 30) -> dict:
         else:
             resonance_bonus = 0.0
 
-        total = strategy_score + sector_score + tech_score + resonance_bonus
+        # 维度5: 引入美股映射与全球宏观折价分 (快速计算)
+        us_premium = premiums["sectors"].get(sec_key, {}).get("score", 0.0) if sec_key else 0.0
+        global_discounts = premiums.get("risk_discount", 0.0) + premiums.get("fx_discount", 0.0)
 
-        # 最低门槛：至少有策略命中 OR 在核心赛道内且景气度高
-        if total < 1.0:
+        # 第一步计算基础得分 (不含舆情情感得分)
+        base_total = strategy_score + sector_score + tech_score + resonance_bonus + us_premium + global_discounts
+        base_total = max(min(base_total, 20.0), 0.0)
+
+        # 粗选门槛：基础评分大于或等于 1.0 即可进入候选池
+        if base_total < 1.0:
             continue
 
-        score_map[code] = {
+        first_pass_map[code] = {
             "strategy_score":  round(strategy_score, 2),
             "sector_score":    round(sector_score, 2),
             "tech_score":      round(tech_score, 2),
             "resonance_bonus": round(resonance_bonus, 2),
-            "total":           round(total, 2),
+            "us_premium":      round(us_premium, 2),
+            "global_discounts": round(global_discounts, 2),
+            "us_premium_reason": premiums["sectors"].get(sec_key, {}).get("reason", "") if sec_key else "",
+            "base_total":      base_total,
             "hits":            hits,
+        }
+
+    # 按基础得分粗筛出前 top_n + 15 个候选，大幅缩减后续 AI 舆情请求量
+    candidate_limit = top_n + 15
+    top_candidates = sorted(first_pass_map, key=lambda c: -first_pass_map[c]["base_total"])[:candidate_limit]
+
+    # ── Step 3.5: 第二轮精选评分 (仅针对前 N 候选调用 AI 舆情情感分析) ────────────────
+    score_map: dict[str, dict] = {}
+    for code in top_candidates:
+        row = all_data.get(code, {})
+        sc = first_pass_map[code]
+        
+        # 精细化运行舆情情感深度分析与爆雷风控一票否决
+        sentiment = analyze_stock_sentiment(code, row.get("名称", code))
+        if sentiment.get("is_circuit_break", False):
+            logger.warning(f"⚠️ 风控阻断: 股票 {row.get('名称', code)} ({code}) 触发一票否决风险事件: {sentiment.get('reason')}")
+            continue
+
+        sentiment_score = sentiment.get("sentiment_score", 0.0)
+        total = sc["base_total"] + sentiment_score
+        total = max(min(total, 20.0), 0.0)
+
+        score_map[code] = {
+            "strategy_score":  sc["strategy_score"],
+            "sector_score":    sc["sector_score"],
+            "tech_score":      sc["tech_score"],
+            "resonance_bonus": sc["resonance_bonus"],
+            "sentiment_score": round(sentiment_score, 2),
+            "us_premium":      sc["us_premium"],
+            "global_discounts": sc["global_discounts"],
+            "sentiment_label": sentiment.get("sentiment_label", "中性"),
+            "sentiment_reason": sentiment.get("reason", ""),
+            "us_premium_reason": sc["us_premium_reason"],
+            "total":           round(total, 2),
+            "hits":            sc["hits"],
         }
 
     # ── Step 4: 组装个股 DataFrame ───────────────────────────────
@@ -273,6 +323,12 @@ def run_recommendation_engine(top_n: int = 30) -> dict:
             "赛道分":   sc["sector_score"],
             "技术分":   sc["tech_score"],
             "共振加成": sc["resonance_bonus"],
+            "舆情分":   sc["sentiment_score"],
+            "美股溢价": sc["us_premium"],
+            "全球折价": sc["global_discounts"],
+            "舆情标签": sc["sentiment_label"],
+            "舆情理由": sc["sentiment_reason"],
+            "美股理由": sc["us_premium_reason"],
             "评级":     grade,
             "评级标签": glabel,
             "评级色":   gcolor,
@@ -304,11 +360,17 @@ def run_recommendation_engine(top_n: int = 30) -> dict:
             sum(score_map[c]["total"] for c in recommended) / len(recommended)
             if recommended else 0
         )
+        
+        # 融入实时美股传导景气修正分
+        base_boom = meta.get("boom_score", 5)
+        us_gain = premiums["sectors"].get(sector_key, {}).get("score", 0.0)
+        dynamic_boom = max(min(base_boom + us_gain * 0.8, 10.0), 0.0)
+        
         sector_stats.append({
             "sector_key":  sector_key,
             "sector_name": sec_data["name"],
             "color":       sec_data["color"],
-            "boom_score":  meta.get("boom_score", 5),
+            "boom_score":  round(dynamic_boom, 1),
             "weight":      meta.get("weight", 2.0),
             "thesis":      meta.get("thesis", ""),
             "catalyst":    meta.get("catalyst", ""),
@@ -316,7 +378,7 @@ def run_recommendation_engine(top_n: int = 30) -> dict:
             "recommended_cnt": len(recommended),
             "strategy_hits":   hit_by_strategy,
             "avg_score":       round(avg_score, 2),
-            "热度指数":        round(meta.get("boom_score", 5) * meta.get("weight", 2) / 10.0 * 10, 1),
+            "热度指数":        round(dynamic_boom * meta.get("weight", 2.0) / 10.0 * 10, 1),
         })
     sectors_df = pd.DataFrame(sector_stats).sort_values("热度指数", ascending=False)
 
@@ -337,6 +399,8 @@ def run_recommendation_engine(top_n: int = 30) -> dict:
         "top_sector":         top_sector,
         "top_sector_boom":    top_sector_boom,
         "generated_at":       datetime.now().strftime("%H:%M:%S"),
+        "global_premiums":    premiums
     }
 
     return {"stocks": stocks_df, "sectors": sectors_df, "summary": summary}
+
