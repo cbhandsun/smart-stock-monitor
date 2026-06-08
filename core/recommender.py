@@ -253,6 +253,17 @@ def run_recommendation_engine(top_n: int = 30) -> dict:
         total = sc["base_total"] + sentiment_score
         total = max(min(total, 20.0), 0.0)
 
+        # 运行高级买卖点与自适应风控建议计算
+        try:
+            full_symbol = "sh" + code if code.startswith('6') else "sz" + code
+            from modules.data_loader import calculate_advanced_trading_signals
+            exec_signals = calculate_advanced_trading_signals(full_symbol)
+        except Exception as e:
+            logger.error(f"Failed to calculate advanced signals for {code}: {e}")
+            exec_signals = {
+                "signal": "计算异常", "buy_zone": "—", "stop_loss": "—", "take_profit": "—"
+            }
+
         score_map[code] = {
             "strategy_score":  sc["strategy_score"],
             "sector_score":    sc["sector_score"],
@@ -264,6 +275,10 @@ def run_recommendation_engine(top_n: int = 30) -> dict:
             "sentiment_label": sentiment.get("sentiment_label", "中性"),
             "sentiment_reason": sentiment.get("reason", ""),
             "us_premium_reason": sc["us_premium_reason"],
+            "exec_signal":      exec_signals.get("signal", "观望"),
+            "exec_buy_zone":    exec_signals.get("buy_zone", "—"),
+            "exec_stop_loss":   exec_signals.get("stop_loss", "—"),
+            "exec_take_profit": exec_signals.get("take_profit", "—"),
             "total":           round(total, 2),
             "hits":            sc["hits"],
         }
@@ -329,6 +344,10 @@ def run_recommendation_engine(top_n: int = 30) -> dict:
             "舆情标签": sc["sentiment_label"],
             "舆情理由": sc["sentiment_reason"],
             "美股理由": sc["us_premium_reason"],
+            "交易信号":   sc["exec_signal"],
+            "买入区间":   sc["exec_buy_zone"],
+            "止损点":     sc["exec_stop_loss"],
+            "止盈点":     sc["exec_take_profit"],
             "评级":     grade,
             "评级标签": glabel,
             "评级色":   gcolor,

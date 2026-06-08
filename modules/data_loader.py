@@ -355,27 +355,114 @@ def fetch_kline_weekly_monthly(symbol, period='weekly', datalen=100):
         print(f"Fetch {period} data error for {symbol}: {e}")
         return pd.DataFrame()
 
-def fetch_trading_signals(symbol):
-    """基于 K线数据计算简单的技术信号"""
-    df = fetch_kline(symbol)
-    if df.empty or len(df) < 2:
-        return "数据不足，无法生成信号"
+def calculate_advanced_trading_signals(symbol):
+    """
+    计算基于行业先进做法的买卖点及风控目标 (SSM Quantum Pro)
+    """
+    df = fetch_kline(symbol, period='daily', datalen=100)
+    if df.empty or len(df) < 20:
+        return {
+            "signal": "数据不足",
+            "buy_zone": "—",
+            "stop_loss": "—",
+            "take_profit": "—",
+            "rsi": 50.0,
+            "macro_trend": "未知"
+        }
+    
+    df = df.copy()
+    # 确保价格数据为数值型
+    for col in ['开盘', '最高', '最低', '收盘', '成交量']:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+    # 计算 ATR-14
+    high_low = df['最高'] - df['最低']
+    high_close = (df['最高'] - df['收盘'].shift()).abs()
+    low_close = (df['最低'] - df['收盘'].shift()).abs()
+    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+    df['ATR'] = tr.rolling(window=14).mean()
+    
+    # 计算 RSI-14 (自愈处理分母为0)
+    close_delta = df['收盘'].diff()
+    up = close_delta.clip(lower=0)
+    down = -1 * close_delta.clip(upper=0)
+    ma_up = up.rolling(window=14).mean()
+    ma_down = down.rolling(window=14).mean()
+    rs = ma_up / ma_down.replace(0, 1e-6)
+    df['RSI'] = 100.0 - (100.0 / (1.0 + rs))
+    
+    # 填充热身期的空值
+    df['ATR'] = df['ATR'].bfill().fillna(0.0)
+    df['RSI'] = df['RSI'].fillna(50.0)
     
     latest = df.iloc[-1]
     prev = df.iloc[-2]
     
-    try:
-        if prev['MA5'] < prev['MA20'] and latest['MA5'] > latest['MA20']:
-            return "【买入信号】MA5 金叉 MA20，短期趋势走强"
-        elif prev['MA5'] > prev['MA20'] and latest['MA5'] < latest['MA20']:
-            return "【卖出信号】MA5 死叉 MA20，短期趋势转弱"
-        
-        if latest['收盘'] > latest['MA20']:
-            return "【持仓/看多】股价站稳 20 日均线"
+    close = float(latest['收盘'])
+    atr = float(latest['ATR'])
+    rsi = float(latest['RSI'])
+    
+    # 获取 MA 均线
+    ma5 = float(latest.get('MA5', close))
+    ma20 = float(latest.get('MA20', close))
+    ma60 = float(latest.get('MA60', close))
+    
+    # 1. 判定大周期大势 (Regime Filter: 收盘价是否站上生命线 MA60)
+    macro_trend_up = close >= ma60
+    
+    # 2. 决策逻辑
+    # 🟢 强买点：周线级别偏多 + RSI超卖回踩(< 45) + 日线均线偏多或者拐头向上 (MA5 > MA20)
+    if macro_trend_up and rsi < 45 and ma5 >= ma20:
+        signal = "🟢 建议分批建仓 (大趋势向上+日线回踩超卖)"
+        stop_loss = round(close - 1.5 * atr, 2)
+        take_profit = round(close + 3.0 * atr, 2)
+        buy_zone = f"{round(close - 0.5 * atr, 2)} ~ {round(close + 0.25 * atr, 2)}"
+    # 🔴 减仓卖点：日线级别死叉或者股价跌破生命线 MA20
+    elif (prev.get('MA5', ma5) >= prev.get('MA20', ma20) and ma5 < ma20) or (close < ma20 and prev.get('收盘', close) >= prev.get('MA20', ma20)):
+        signal = "🔴 建议减仓避险 (均线死叉或破位20日均线)"
+        stop_loss = "—"
+        take_profit = "—"
+        buy_zone = "—"
+    # 🔵 持仓观望/超买警示
+    elif macro_trend_up:
+        if rsi > 75:
+            signal = "🟡 建议部分止盈 (日线RSI超买高位震荡)"
         else:
-            return "【观望/看空】股价处于均线下方压制"
-    except:
-        return "信号计算异常"
+            signal = "🔵 建议继续持股 (宏观多头格局但处于拉升中)"
+        stop_loss = round(close - 2.0 * atr, 2) # 宽幅移动止损
+        take_profit = "—"
+        buy_zone = "—"
+    # ⚪ 逆势观望
+    else:
+        signal = "⚪ 建议空仓观望 (生命线下方下行趋势)"
+        stop_loss = "—"
+        take_profit = "—"
+        buy_zone = "—"
+        
+    return {
+        "signal": signal,
+        "buy_zone": buy_zone,
+        "stop_loss": stop_loss,
+        "take_profit": take_profit,
+        "rsi": round(rsi, 1),
+        "macro_trend": "多头" if macro_trend_up else "空头"
+    }
+
+def fetch_trading_signals(symbol):
+    """基于 K线数据计算简单的技术信号"""
+    try:
+        adv = calculate_advanced_trading_signals(symbol)
+        if adv["signal"] == "数据不足":
+            return "数据不足，无法生成信号"
+        
+        # 兼容原有的字符串返回，同时丰富内容供 AI 报告消费
+        desc = f"{adv['signal']} (日线RSI: {adv['rsi']}, 大趋势: {adv['macro_trend']})"
+        if adv["stop_loss"] != "—":
+            desc += f"，建议建仓价区: {adv['buy_zone']}，风控防守止损位: {adv['stop_loss']}，第一止盈目标位: {adv['take_profit']}"
+        return desc
+    except Exception as e:
+        return f"信号计算异常: {e}"
 
 def fetch_research_reports(symbol):
     """获取研报 (akshare) — Redis 缓存 3600s"""

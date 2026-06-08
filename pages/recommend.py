@@ -60,6 +60,15 @@ def _stock_card(row, rank, my_stocks):
     s_us = row.get("美股溢价", 0.0)
     s_glob = row.get("全球折价", 0.0)
 
+    exec_sig = row.get("交易信号", "—")
+    exec_sig_color = "#94a3b8"
+    if "分批建仓" in exec_sig or "买入" in exec_sig:
+        exec_sig_color = "#10b981"
+    elif "减仓" in exec_sig or "卖出" in exec_sig or "避险" in exec_sig:
+        exec_sig_color = "#ef4444"
+    elif "止盈" in exec_sig:
+        exec_sig_color = "#f59e0b"
+
     tags = "".join(
         f'<span style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);'
         f'border-radius:5px;padding:2px 6px;font-size:0.67rem;color:#94a3b8;">{t}</span> '
@@ -120,7 +129,8 @@ def _stock_card(row, rank, my_stocks):
   
   <div style="font-size:0.68rem;color:#64748b;margin-top:6px;padding:6px;background:rgba(255,255,255,0.02);border-radius:6px;border:1px solid rgba(255,255,255,0.03);">
     {f'🌎 <b>美股映射</b>：{row.get("美股理由")}<br>' if row.get("美股理由") else ""}
-    {f'📰 <b>舆情风向</b>：<span style="color:#38bdf8;font-weight:700;">[{row.get("舆情标签")}]</span> {row.get("舆情理由")}' if row.get("舆情理由") else ""}
+    {f'📰 <b>舆情风向</b>：<span style="color:#38bdf8;font-weight:700;">[{row.get("舆情标签")}]</span> {row.get("舆情理由")}<br>' if row.get("舆情理由") else ""}
+    {f'🎯 <b>交易执行</b>：<span style="color:{exec_sig_color};font-weight:800;">{exec_sig}</span> (建议价区: <span style="font-family:monospace;color:#f1f5f9;">{row.get("买入区间")}</span> | 止损: <span style="font-family:monospace;color:#ef4444;">{row.get("止损点")}</span> | 止盈: <span style="font-family:monospace;color:#10b981;">{row.get("止盈点")}</span>)<br>' if exec_sig != "—" else ""}
   </div>
   {f'<div style="font-size:0.7rem;color:#475569;margin-top:5px;padding:4px 8px;background:rgba(56,189,248,0.04);border-radius:4px;">⚡ {catalyst}</div>' if catalyst else ""}
 </div>"""
