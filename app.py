@@ -25,15 +25,26 @@ except Exception:
     logging.warning("⚠️ 样式加载失败，系统将采用极简 UI")
 
 # ---- 数据状态自愈层 (Persistence Layer) ----
-if 'page' in st.query_params:
-    st.session_state['current_page'] = st.query_params['page']
-elif 'current_page' not in st.session_state:
-    st.session_state['current_page'] = 'market'
+if 'current_page' not in st.session_state:
+    st.session_state['current_page'] = st.query_params.get('page', 'market')
+if 'selected_stock' not in st.session_state:
+    st.session_state['selected_stock'] = st.query_params.get('symbol', '601933')
 
-if 'symbol' in st.query_params:
-    st.session_state['selected_stock'] = st.query_params['symbol']
-elif 'selected_stock' not in st.session_state:
-    st.session_state['selected_stock'] = '601933'
+if '_last_query_page' not in st.session_state:
+    st.session_state['_last_query_page'] = st.session_state['current_page']
+if '_last_query_symbol' not in st.session_state:
+    st.session_state['_last_query_symbol'] = st.session_state['selected_stock']
+
+# 检测浏览器 URL 手动改变 (如回退/前进或手动输入)
+current_query_page = st.query_params.get('page', '')
+if current_query_page and current_query_page != st.session_state['_last_query_page']:
+    st.session_state['current_page'] = current_query_page
+    st.session_state['_last_query_page'] = current_query_page
+
+current_query_symbol = st.query_params.get('symbol', '')
+if current_query_symbol and current_query_symbol != st.session_state['_last_query_symbol']:
+    st.session_state['selected_stock'] = current_query_symbol
+    st.session_state['_last_query_symbol'] = current_query_symbol
 
 # ---- 数据初始化 (Data Pre-loading) ----
 my_stocks = load_watchlist()
@@ -109,11 +120,19 @@ except Exception as e:
     logging.error(f"Failed to load sidebar: {e}")
     st.sidebar.error("侧边栏加载失败")
 
-# ---- 主界面渲染执行 ----
-st.query_params['page'] = st.session_state.get('current_page', 'market')
-st.query_params['symbol'] = st.session_state.get('selected_stock', '601933')
+# ---- 同步 URL Query Params 并渲染 ----
+target_page = st.session_state.get('current_page', 'market')
+target_symbol = st.session_state.get('selected_stock', '601933')
 
-current_page = st.session_state.get('current_page', 'market')
+if st.query_params.get('page', '') != target_page:
+    st.query_params['page'] = target_page
+    st.session_state['_last_query_page'] = target_page
+
+if st.query_params.get('symbol', '') != target_symbol:
+    st.query_params['symbol'] = target_symbol
+    st.session_state['_last_query_symbol'] = target_symbol
+
+current_page = target_page
 render_args = PAGE_RENDER_ARGS.get(current_page, (L,))
 
 _route(current_page, render_args)

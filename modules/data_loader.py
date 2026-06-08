@@ -495,6 +495,8 @@ def _fetch_single_quote(symbol):
         return symbol, {
             "最新价": latest['收盘'],
             "涨跌幅": round(pct, 2),
+            "price": latest['收盘'],
+            "change_pct": round(pct, 2),
             "换手率": latest.get('换手率', 0.0) if '换手率' in latest else 0.0,
             "量比": latest.get('量比', 0.0) if '量比' in latest else 0.0
         }

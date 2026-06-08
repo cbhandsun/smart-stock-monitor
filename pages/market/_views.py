@@ -106,44 +106,19 @@ def _render_track_view(L, my_stocks, name_map):
             unsafe_allow_html=True
         )
 
-    # 实时行情 via Sina (60s Redis 缓存)
-    quotes = {}
-    try:
-        from core.cache import RedisCache
-        _redis = RedisCache()
-        if _redis.ping():
-            cached = _redis.get("track:watchlist_quotes")
-            if cached:
-                quotes = cached
-
-        if not quotes:
-            sina_codes = [f"{'s_sh' if c.startswith('6') else 's_sz'}{c}" for c in my_stocks]
-            url = f"https://hq.sinajs.cn/list={','.join(sina_codes)}"
-            r = requests.get(url, headers={'Referer': 'https://finance.sina.com.cn/'}, timeout=5)
-            for line in r.text.strip().split(';'):
-                if '="' in line:
-                    key = line.split('=')[0].split('_')[-1]
-                    val = line.split('="')[1].strip('"')
-                    parts = val.split(',')
-                    if len(parts) > 3:
-                        quotes[key] = {
-                            'name': parts[0],
-                            'price': float(parts[1]),
-                            'change': float(parts[3]),
-                        }
-            if _redis.ping():
-                _redis.set("track:watchlist_quotes", quotes, expire=60)
-    except Exception:
-        quotes = {}
+    # 实时行情 via fetch_quotes_concurrent (带 L1/L2 缓存，秒开)
+    with st.spinner("⚡ 获取自选股实时行情..."):
+        from modules.data_loader import fetch_quotes_concurrent
+        quotes = fetch_quotes_concurrent(my_stocks)
 
     stock_data = []
     for s in my_stocks:
-        q = next((v for k, v in quotes.items() if s in k), None)
+        q = quotes.get(s, {})
         stock_data.append({
             'code':   s,
-            'name':   q['name'] if q else name_map.get(s, s),
-            'price':  q['price'] if q else 0,
-            'change': q['change'] if q else 0,
+            'name':   name_map.get(s, s),
+            'price':  q.get('price', 0.0),
+            'change': q.get('change_pct', 0.0),
         })
 
     if sort_by == "涨幅↓":

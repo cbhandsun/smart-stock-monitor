@@ -310,14 +310,18 @@ def find_mainforce_stocks() -> pd.DataFrame:
 
         # 获取名称和行情
         name_map = ts.get_name_map()
+        codes = [row['ts_code'].split('.')[0] for _, row in candidates.iterrows()]
+        from modules.data_loader import fetch_quotes_concurrent
+        quotes = fetch_quotes_concurrent(codes)
         rows = []
         for _, row in candidates.iterrows():
             code = row['ts_code'].split('.')[0]
+            q = quotes.get(code, {})
             rows.append({
                 "代码": code,
                 "名称": name_map.get(code, code),
-                "最新价": 0,
-                "涨跌幅": 0,
+                "最新价": q.get("price", 0.0),
+                "涨跌幅": q.get("change_pct", 0.0),
                 "主力净流入": f"{row['net_big']/10000:.0f}万手",
             })
 
@@ -371,15 +375,19 @@ def find_northbound_top() -> pd.DataFrame:
         combined = pd.concat(frames, ignore_index=True)
 
         name_map = ts.get_name_map()
+        codes = [row['ts_code'].split('.')[0] for _, row in combined.iterrows()]
+        from modules.data_loader import fetch_quotes_concurrent
+        quotes = fetch_quotes_concurrent(codes)
         rows = []
         for _, row in combined.iterrows():
             code = row['ts_code'].split('.')[0]
+            q = quotes.get(code, {})
             net_buy = float(row.get('amount', 0) or 0)
             rows.append({
                 "代码": code,
                 "名称": row.get('name', name_map.get(code, code)),
-                "最新价": float(row.get('close', 0) or 0),
-                "涨跌幅": float(row.get('pct_change', 0) or 0),
+                "最新价": q.get("price", 0.0),
+                "涨跌幅": q.get("change_pct", 0.0),
                 "净买入(亿)": f"{net_buy/1e4:.2f}" if net_buy else "0",
             })
 
@@ -461,6 +469,17 @@ def find_tech_breakout() -> pd.DataFrame:
 
             if len(breakout_stocks) >= 10:
                 break
+
+        if breakout_stocks:
+            codes = [item['代码'] for item in breakout_stocks]
+            from modules.data_loader import fetch_quotes_concurrent
+            quotes = fetch_quotes_concurrent(codes)
+            for item in breakout_stocks:
+                code = item['代码']
+                q = quotes.get(code, {})
+                if q:
+                    item['最新价'] = q.get('price', item['最新价'])
+                    item['涨跌幅'] = q.get('change_pct', item['涨跌幅'])
 
         result = pd.DataFrame(breakout_stocks)
         if not result.empty and _redis:
