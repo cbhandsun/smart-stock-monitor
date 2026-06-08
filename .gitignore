@@ -14,3 +14,12 @@ data/cache/
 data/reports/
 data/alerts/
 data/portfolios/
+
+# Local databases and cache
+celerybeat-schedule
+*.db
+data/sessions/
+reports/daily/
+reports/weekly/
+test_ai.py
+test_main_ai.py

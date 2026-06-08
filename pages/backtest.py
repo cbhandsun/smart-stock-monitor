@@ -14,9 +14,11 @@ from components.ui_components import page_header, stock_selector, nav_to_page, i
 
 # 条件导入
 try:
-    from utils.charts import create_performance_chart
+    from utils.charts import create_performance_chart, create_drawdown_chart, create_backtest_trade_chart
 except ImportError:
     create_performance_chart = None
+    create_drawdown_chart = None
+    create_backtest_trade_chart = None
 
 
 def render(L):
@@ -83,12 +85,64 @@ def render(L):
                     r2c2.metric("胜率", f"{result.get('win_rate', 0):.1f}%")
                     r2c3.metric("总交易次数", f"{result.get('total_trades', 0)}")
 
-                    # ---- 绩效曲线 ----
-                    if result.get('daily_values') and create_performance_chart:
-                        st.markdown("##### 📈 净值曲线")
-                        fig = create_performance_chart(result['daily_values'],
-                                                       theme=st.session_state.get('theme', 'dark'))
-                        st.plotly_chart(fig, use_container_width=True)
+                    # ---- 交互式回测可视化大屏 ----
+                    tab_perf, tab_signals, tab_details = st.tabs([
+                        "📈 资产净值与回撤", 
+                        "🕯️ 价格走势与买卖信号", 
+                        "📋 详细成交明细表"
+                    ])
+
+                    theme = st.session_state.get('theme', 'dark')
+
+                    with tab_perf:
+                        if result.get('daily_values') and create_performance_chart:
+                            st.markdown("##### 净值曲线走势")
+                            fig_perf = create_performance_chart(result['daily_values'], theme=theme)
+                            st.plotly_chart(fig_perf, use_container_width=True)
+                            
+                        if result.get('daily_values') and create_drawdown_chart:
+                            st.markdown("##### 回撤深度走势 (Drawdown)")
+                            fig_dd = create_drawdown_chart(result['daily_values'], theme=theme)
+                            st.plotly_chart(fig_dd, use_container_width=True)
+
+                    with tab_signals:
+                        if create_backtest_trade_chart:
+                            st.markdown("##### K线走势与买卖点标记")
+                            fig_trade = create_backtest_trade_chart(kline, result.get('trades_list', []), theme=theme)
+                            st.plotly_chart(fig_trade, use_container_width=True)
+                        else:
+                            st.info("K线图模块不可用")
+
+                    with tab_details:
+                        st.markdown("##### 成交明细流水")
+                        trades_list = result.get('trades_list', [])
+                        if trades_list:
+                            trades_df = pd.DataFrame(trades_list)
+                            # 重新排序列并美化命名
+                            trades_df.rename(columns={
+                                'entry_date': '买入日期',
+                                'exit_date': '卖出日期',
+                                'direction': '交易方向',
+                                'size': '交易数量',
+                                'entry_price': '买入价',
+                                'exit_price': '卖出价',
+                                'pnl': '盈亏金额',
+                                'return_pct': '收益率'
+                            }, inplace=True)
+                            
+                            # 格式化显示
+                            st.dataframe(
+                                trades_df[['买入日期', '卖出日期', '交易方向', '买入价', '卖出价', '交易数量', '盈亏金额', '收益率']],
+                                use_container_width=True,
+                                column_config={
+                                    '买入价': st.column_config.NumberColumn(format="%.2f元"),
+                                    '卖出价': st.column_config.NumberColumn(format="%.2f元"),
+                                    '盈亏金额': st.column_config.NumberColumn(format="%.2f元"),
+                                    '收益率': st.column_config.NumberColumn(format="%.2f%%"),
+                                }
+                            )
+                        else:
+                            st.info("当前回测周期内没有产生任何成交记录。")
 
                     # ---- 策略摘要卡片 ----
                     st.html(f'''<div class="ssm-card" style="margin-top:12px;">

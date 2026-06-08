@@ -274,3 +274,100 @@ def create_bar_chart(x, y, title="", theme="dark"):
     )
     
     return fig
+
+def create_backtest_trade_chart(df, trades_list, theme="dark"):
+    """创建包含交易买卖点的 K 线与成交量图"""
+    template = "plotly_dark" if theme == "dark" else "plotly_white"
+    
+    fig = make_subplots(
+        rows=2, cols=1, 
+        shared_xaxes=True, 
+        vertical_spacing=0.03, 
+        row_heights=[0.75, 0.25]
+    )
+    
+    # 1. K线图
+    date_col = 'date' if 'date' in df.columns else ('日期' if '日期' in df.columns else df.index)
+    open_col = 'open' if 'open' in df.columns else '开盘'
+    high_col = 'high' if 'high' in df.columns else '最高'
+    low_col = 'low' if 'low' in df.columns else '最低'
+    close_col = 'close' if 'close' in df.columns else '收盘'
+    volume_col = 'volume' if 'volume' in df.columns else '成交量'
+    
+    x_data = df.index if (isinstance(date_col, pd.Index) or not isinstance(date_col, str) or date_col not in df.columns) else df[date_col]
+    
+    # 用 K 线表示价格走势
+    fig.add_trace(go.Candlestick(
+        x=x_data,
+        open=df[open_col],
+        high=df[high_col],
+        low=df[low_col],
+        close=df[close_col],
+        name="价格走势",
+        increasing_line_color='#ef4444',
+        decreasing_line_color='#10b981'
+    ), row=1, col=1)
+    
+    # 2. 标记买卖点
+    buy_dates = []
+    buy_prices = []
+    sell_dates = []
+    sell_prices = []
+    
+    for t in trades_list:
+        if t['direction'] == '做多':
+            buy_dates.append(t['entry_date'])
+            buy_prices.append(t['entry_price'])
+            sell_dates.append(t['exit_date'])
+            sell_prices.append(t['exit_price'])
+        else:
+            # 做空方向
+            sell_dates.append(t['entry_date'])
+            sell_prices.append(t['entry_price'])
+            buy_dates.append(t['exit_date'])
+            buy_prices.append(t['exit_price'])
+            
+    if buy_dates:
+        fig.add_trace(go.Scatter(
+            x=buy_dates,
+            y=buy_prices,
+            mode='markers',
+            marker=dict(symbol='triangle-up', size=12, color='#ef4444', line=dict(width=1, color='white')),
+            name='买入/平空信号',
+            hoverinfo='text',
+            hovertext=[f"买点时间: {d}<br>成交价格: {p:.2f}元" for d, p in zip(buy_dates, buy_prices)]
+        ), row=1, col=1)
+        
+    if sell_dates:
+        fig.add_trace(go.Scatter(
+            x=sell_dates,
+            y=sell_prices,
+            mode='markers',
+            marker=dict(symbol='triangle-down', size=12, color='#10b981', line=dict(width=1, color='white')),
+            name='卖出/做空信号',
+            hoverinfo='text',
+            hovertext=[f"卖点时间: {d}<br>成交价格: {p:.2f}元" for d, p in zip(sell_dates, sell_prices)]
+        ), row=1, col=1)
+        
+    # 3. 成交量
+    colors = ['#ef4444' if c >= o else '#10b981' for c, o in zip(df[close_col], df[open_col])]
+    fig.add_trace(go.Bar(
+        x=x_data, 
+        y=df[volume_col], 
+        marker_color=colors,
+        name="成交量"
+    ), row=2, col=1)
+    
+    fig.update_layout(
+        template=template, 
+        height=550,
+        xaxis_rangeslider_visible=False,
+        margin=dict(l=10, r=10, t=30, b=10),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        hovermode='x unified',
+        showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    
+    return fig

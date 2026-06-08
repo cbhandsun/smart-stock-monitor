@@ -81,7 +81,7 @@ class BacktestEngine:
             if pd.isna(sharpe_ratio): sharpe_ratio = 0.0
             if pd.isna(annual_return): annual_return = total_return
             
-            # 每日净值提取, 补齐格式给旧的性能走势图用
+            # 每日净值提取, 补齐格式给旧性能走势图及回撤图用
             daily_values = []
             values_series = pf.value()
             cash_series = pf.cash()
@@ -91,6 +91,24 @@ class BacktestEngine:
                     'total_value': float(val),
                     'cash': float(cash_series.get(date_idx, 0.0))
                 })
+            
+            # 提取成交明细记录
+            trades_records = pf.trades.records
+            trades_list = []
+            if not trades_records.empty:
+                for _, trade_row in trades_records.iterrows():
+                    entry_date = close.index[int(trade_row['entry_idx'])].strftime('%Y-%m-%d')
+                    exit_date = close.index[int(trade_row['exit_idx'])].strftime('%Y-%m-%d')
+                    trades_list.append({
+                        'entry_date': entry_date,
+                        'exit_date': exit_date,
+                        'size': float(trade_row['size']),
+                        'entry_price': float(trade_row['entry_price']),
+                        'exit_price': float(trade_row['exit_price']),
+                        'pnl': float(trade_row['pnl']),
+                        'return_pct': float(trade_row['return'] * 100),
+                        'direction': '做多' if trade_row['direction'] == 0 else '做空'
+                    })
                 
             return {
                 'initial_cash': self.initial_cash,
@@ -101,7 +119,8 @@ class BacktestEngine:
                 'sharpe_ratio': sharpe_ratio,
                 'total_trades': total_trades,
                 'win_rate': win_rate,
-                'daily_values': daily_values
+                'daily_values': daily_values,
+                'trades_list': trades_list
             }
         except Exception as e:
             print(f"VectorBT Error: {e}")

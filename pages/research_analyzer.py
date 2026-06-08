@@ -64,10 +64,15 @@ def render(L, name_map):
     stock_name = name_map.get(symbol, symbol)
 
     if symbol:
+        # 检查是否切换了股票，切换后清空问答历史
+        if "last_rag_symbol" not in st.session_state or st.session_state["last_rag_symbol"] != symbol:
+            st.session_state["rag_chat_history"] = []
+            st.session_state["last_rag_symbol"] = symbol
+
         # 获取真实研报
         reports_df = fetch_research_reports(symbol)
 
-        tab1, tab2, tab3 = st.tabs(["研报分析", "多研报对比", "评级趋势"])
+        tab1, tab2, tab3, tab4 = st.tabs(["研报分析", "多研报对比", "评级趋势", "研报智能问答 (RAG)"])
 
         with tab1:
             col1, col2 = st.columns([2, 1])
@@ -161,3 +166,33 @@ def render(L, name_map):
                     st.info("研报数据中无评级列")
             else:
                 st.info("暂无研报数据用于评级趋势分析")
+
+        with tab4:
+            st.subheader("研报 AI 智能问答 (RAG)")
+            if reports_df.empty:
+                st.info("暂无研报数据，无法使用问答功能")
+            else:
+                st.write("您可以输入任何关于该公司研报中涉及的内容，系统将自动在研报原文分块检索，并结合 AI 进行精准解答。")
+                
+                # 展现对话历史
+                if "rag_chat_history" not in st.session_state:
+                    st.session_state["rag_chat_history"] = []
+                
+                for item in st.session_state["rag_chat_history"]:
+                    with st.chat_message(item["role"]):
+                        st.markdown(item["content"])
+                
+                # 输入问题
+                query = st.chat_input("询问研报问题，例如：“这只股票有哪些核心增长点？”")
+                if query:
+                    with st.chat_message("user"):
+                        st.markdown(query)
+                    
+                    st.session_state["rag_chat_history"].append({"role": "user", "content": query})
+                    
+                    with st.chat_message("assistant"):
+                        with st.spinner("检索研报并生成回答中..."):
+                            response = research_analyzer.answer_query_with_rag(query, symbol, stock_name, reports_df)
+                            st.markdown(response)
+                    
+                    st.session_state["rag_chat_history"].append({"role": "assistant", "content": response})

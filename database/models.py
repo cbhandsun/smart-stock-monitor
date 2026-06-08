@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine, Column, String, Float, DateTime, Integer, JSON, Boolean, Text
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker, Session, scoped_session
 from datetime import datetime
 import os
 
@@ -116,9 +116,21 @@ class DatabaseManager:
             # 默认使用SQLite
             database_url = os.getenv('DATABASE_URL', 'sqlite:///./data/stock_monitor.db')
         
-        self.engine = create_engine(database_url, echo=False)
+        if database_url.startswith('postgresql'):
+            self.engine = create_engine(
+                database_url,
+                pool_size=15,
+                max_overflow=25,
+                pool_recycle=1800,
+                pool_pre_ping=True,
+                echo=False
+            )
+        else:
+            self.engine = create_engine(database_url, echo=False)
+            
         Base.metadata.create_all(self.engine)
-        self.SessionLocal = sessionmaker(bind=self.engine)
+        self.session_factory = sessionmaker(bind=self.engine)
+        self.SessionLocal = scoped_session(self.session_factory)
     
     def get_session(self) -> Session:
         """获取数据库会话"""
@@ -126,6 +138,7 @@ class DatabaseManager:
     
     def close(self):
         """关闭数据库连接"""
+        self.SessionLocal.remove()
         self.engine.dispose()
     
     def save_stock_data(self, symbol: str, data: dict):
@@ -148,7 +161,7 @@ class DatabaseManager:
             session.rollback()
             raise e
         finally:
-            session.close()
+            self.SessionLocal.remove()
     
     def get_stock_data(self, symbol: str, start_date: datetime = None, end_date: datetime = None):
         """获取股票数据"""
@@ -163,7 +176,7 @@ class DatabaseManager:
             
             return query.order_by(StockData.date).all()
         finally:
-            session.close()
+            self.SessionLocal.remove()
     
     def save_portfolio(self, portfolio_id: str, user_id: str, name: str, 
                        description: str, stocks: list):
@@ -192,7 +205,7 @@ class DatabaseManager:
             session.rollback()
             raise e
         finally:
-            session.close()
+            self.SessionLocal.remove()
     
     def get_portfolio(self, portfolio_id: str):
         """获取投资组合"""
@@ -200,7 +213,7 @@ class DatabaseManager:
         try:
             return session.query(UserPortfolio).filter_by(id=portfolio_id).first()
         finally:
-            session.close()
+            self.SessionLocal.remove()
     
     def get_user_portfolios(self, user_id: str):
         """获取用户的所有投资组合"""
@@ -208,7 +221,7 @@ class DatabaseManager:
         try:
             return session.query(UserPortfolio).filter_by(user_id=user_id).all()
         finally:
-            session.close()
+            self.SessionLocal.remove()
     
     def save_alert(self, alert_id: str, user_id: str, symbol: str, 
                    alert_type: str, threshold: float, message: str):
@@ -229,7 +242,7 @@ class DatabaseManager:
             session.rollback()
             raise e
         finally:
-            session.close()
+            self.SessionLocal.remove()
     
     def get_user_alerts(self, user_id: str):
         """获取用户的所有预警"""
@@ -237,7 +250,7 @@ class DatabaseManager:
         try:
             return session.query(AlertRule).filter_by(user_id=user_id).all()
         finally:
-            session.close()
+            self.SessionLocal.remove()
     
     def log_activity(self, user_id: str, action: str, details: dict = None, ip_address: str = None):
         """记录用户活动"""
@@ -254,7 +267,7 @@ class DatabaseManager:
         except Exception as e:
             session.rollback()
         finally:
-            session.close()
+            self.SessionLocal.remove()
     
     def save_backtest_result(self, result_id: str, user_id: str, strategy_name: str,
                             symbols: list, start_date: datetime, end_date: datetime,
@@ -286,7 +299,7 @@ class DatabaseManager:
             session.rollback()
             raise e
         finally:
-            session.close()
+            self.SessionLocal.remove()
     
     def get_backtest_results(self, user_id: str = None, limit: int = 100):
         """获取回测结果"""
@@ -297,7 +310,7 @@ class DatabaseManager:
                 query = query.filter_by(user_id=user_id)
             return query.order_by(BacktestResult.created_at.desc()).limit(limit).all()
         finally:
-            session.close()
+            self.SessionLocal.remove()
 
 # 全局数据库实例
 db_manager = None

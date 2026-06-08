@@ -25,9 +25,14 @@ except Exception:
     logging.warning("⚠️ 样式加载失败，系统将采用极简 UI")
 
 # ---- 数据状态自愈层 (Persistence Layer) ----
-if 'current_page' not in st.session_state:
+if 'page' in st.query_params:
+    st.session_state['current_page'] = st.query_params['page']
+elif 'current_page' not in st.session_state:
     st.session_state['current_page'] = 'market'
-if 'selected_stock' not in st.session_state:
+
+if 'symbol' in st.query_params:
+    st.session_state['selected_stock'] = st.query_params['symbol']
+elif 'selected_stock' not in st.session_state:
     st.session_state['selected_stock'] = '601933'
 
 # ---- 数据初始化 (Data Pre-loading) ----
@@ -105,6 +110,9 @@ except Exception as e:
     st.sidebar.error("侧边栏加载失败")
 
 # ---- 主界面渲染执行 ----
+st.query_params['page'] = st.session_state.get('current_page', 'market')
+st.query_params['symbol'] = st.session_state.get('selected_stock', '601933')
+
 current_page = st.session_state.get('current_page', 'market')
 render_args = PAGE_RENDER_ARGS.get(current_page, (L,))
 

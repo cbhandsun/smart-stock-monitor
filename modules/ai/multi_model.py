@@ -9,17 +9,25 @@ import json
 class AIModel(Enum):
     GPT4 = "gpt-4"
     GPT4_TURBO = "gpt-4-turbo"
+    GPT4O = "gpt-4o"
     CLAUDE = "claude-3"
     CLAUDE_SONNET = "claude-3-sonnet"
     CLAUDE_OPUS = "claude-3-opus"
+    CLAUDE_3_5_SONNET = "claude-3.5-sonnet"
     GEMINI = "gemini"
     GEMINI_PRO = "gemini-pro"
+    GEMINI_1_5_FLASH = "gemini-1.5-flash"
+    GEMINI_1_5_PRO = "gemini-1.5-pro"
+    GEMINI_2_0_FLASH = "gemini-2.0-flash"
+    GEMINI_2_5_FLASH = "gemini-2.5-flash"
     KIMI = "kimi"
     KIMI_8K = "kimi-8k"
     KIMI_32K = "kimi-32k"
     DEEPSEEK = "deepseek"
     DEEPSEEK_CHAT = "deepseek-chat"
     DEEPSEEK_CODER = "deepseek-coder"
+    DEEPSEEK_V3 = "deepseek-chat-v3"
+    DEEPSEEK_R1 = "deepseek-reasoner"
 
 @dataclass
 class ModelPerformance:
@@ -146,6 +154,64 @@ class MultiModelAI:
             max_tokens=4000,
             priority=2
         ),
+        AIModel.GPT4O: ModelConfig(
+            name="GPT-4o",
+            api_key_env="OPENAI_API_KEY",
+            model_id="gpt-4o",
+            max_tokens=4000,
+            priority=1
+        ),
+        AIModel.CLAUDE_3_5_SONNET: ModelConfig(
+            name="Claude 3.5 Sonnet",
+            api_key_env="ANTHROPIC_API_KEY",
+            model_id="claude-3-5-sonnet-20241022",
+            max_tokens=4000,
+            priority=1
+        ),
+        AIModel.GEMINI_1_5_FLASH: ModelConfig(
+            name="Gemini 1.5 Flash",
+            api_key_env="GEMINI_API_KEY",
+            model_id="gemini-1.5-flash",
+            max_tokens=4000,
+            priority=2
+        ),
+        AIModel.GEMINI_1_5_PRO: ModelConfig(
+            name="Gemini 1.5 Pro",
+            api_key_env="GEMINI_API_KEY",
+            model_id="gemini-1.5-pro",
+            max_tokens=8000,
+            priority=1
+        ),
+        AIModel.GEMINI_2_0_FLASH: ModelConfig(
+            name="Gemini 2.0 Flash",
+            api_key_env="GEMINI_API_KEY",
+            model_id="gemini-2.0-flash",
+            max_tokens=4000,
+            priority=2
+        ),
+        AIModel.GEMINI_2_5_FLASH: ModelConfig(
+            name="Gemini 2.5 Flash",
+            api_key_env="GEMINI_API_KEY",
+            model_id="gemini-2.5-flash",
+            max_tokens=4000,
+            priority=2
+        ),
+        AIModel.DEEPSEEK_V3: ModelConfig(
+            name="DeepSeek V3",
+            api_key_env="DEEPSEEK_API_KEY",
+            base_url="https://api.deepseek.com",
+            model_id="deepseek-chat",
+            max_tokens=4000,
+            priority=2
+        ),
+        AIModel.DEEPSEEK_R1: ModelConfig(
+            name="DeepSeek R1",
+            api_key_env="DEEPSEEK_API_KEY",
+            base_url="https://api.deepseek.com",
+            model_id="deepseek-reasoner",
+            max_tokens=8000,
+            priority=1
+        ),
     }
     
     def __init__(self, default_model: AIModel = None, auto_fallback: bool = True):
@@ -157,7 +223,7 @@ class MultiModelAI:
             auto_fallback: 是否启用自动故障切换
         """
         self.available_models: Dict[AIModel, bool] = {}
-        self.current_model = default_model or AIModel.GEMINI
+        self.current_model = default_model or AIModel.GEMINI_1_5_FLASH
         self.auto_fallback = auto_fallback
         self.performance_history: List[ModelPerformance] = []
         self.max_history_size = 100
@@ -170,6 +236,11 @@ class MultiModelAI:
             config = self.MODEL_CONFIGS.get(model)
             if config:
                 api_key = os.getenv(config.api_key_env)
+                # 兼容性设计：如果未设置 GEMINI_API_KEY，但 OPENAI_API_KEY 包含 Google API key (以 AIzaSy 开头)
+                if not api_key and config.api_key_env == "GEMINI_API_KEY":
+                    openai_key = os.getenv("OPENAI_API_KEY", "")
+                    if openai_key.startswith("AIzaSy"):
+                        api_key = openai_key
                 self.available_models[model] = bool(api_key)
         
         # 如果当前模型不可用，切换到第一个可用模型
@@ -406,7 +477,12 @@ class MultiModelAI:
         """调用Google Gemini API"""
         try:
             import google.generativeai as genai
-            genai.configure(api_key=os.getenv(config.api_key_env))
+            api_key = os.getenv(config.api_key_env)
+            if not api_key and config.api_key_env == "GEMINI_API_KEY":
+                openai_key = os.getenv("OPENAI_API_KEY", "")
+                if openai_key.startswith("AIzaSy"):
+                    api_key = openai_key
+            genai.configure(api_key=api_key)
             
             model = genai.GenerativeModel(config.model_id)
             

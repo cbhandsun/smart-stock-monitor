@@ -499,3 +499,88 @@ class ResearchAnalyzer:
                 })
         
         return pd.DataFrame(data)
+        
+    def answer_query_with_rag(self, query: str, symbol: str, name: str, reports_df: pd.DataFrame) -> str:
+        """
+        基于个股研报使用 TF-IDF 进行检索并结合大模型回答用户提问 (RAG)
+        """
+        if reports_df.empty:
+            return "⚠️ 该个股暂无近期研报，AI 无法进行检索和精准回答。"
+            
+        # 1. 对研报内容分块 (Chunking)
+        chunks = []
+        for idx, row in reports_df.iterrows():
+            title = str(row.get('研报名称', row.get('title', '未命名研报')))
+            institution = str(row.get('机构', row.get('institution', '未知机构')))
+            author = str(row.get('作者', row.get('author', '未知分析师')))
+            content = str(row.get('摘要', row.get('content', '')))
+            
+            if not content:
+                continue
+                
+            # 分块：每个块包含文章标题和来源背景
+            header = f"【来源研报：{title} | 机构：{institution} | 作者：{author}】\n"
+            
+            # 以 500 字符为窗口，包含 100 字符重叠进行滑动分块
+            chunk_size = 500
+            overlap = 100
+            start = 0
+            while start < len(content):
+                end = start + chunk_size
+                text_slice = content[start:end]
+                chunks.append(header + text_slice)
+                start += chunk_size - overlap
+
+        if not chunks:
+            return "⚠️ 未能从当前研报提取到有效文本内容。"
+
+        # 2. 本地 TF-IDF 余弦相似度计算与检索 (Top-K)
+        try:
+            from sklearn.feature_extraction.text import TfidfVectorizer
+            from sklearn.metrics.pairwise import cosine_similarity
+            import numpy as np
+
+            # 将用户问题与所有分块组合计算 TF-IDF 矩阵
+            vectorizer = TfidfVectorizer(token_pattern=r'(?u)\b\w+\b') # 兼容中文分词/单字
+            tfidf_matrix = vectorizer.fit_transform(chunks + [query])
+            
+            # 计算 Query（矩阵最后一行）与所有 Chunks 的余弦相似度
+            sims = cosine_similarity(tfidf_matrix[-1], tfidf_matrix[:-1]).flatten()
+            
+            # 排序获取相似度最高的前 4 个分块
+            top_k = min(4, len(chunks))
+            top_indices = np.argsort(sims)[::-1][:top_k]
+            
+            retrieved_chunks = []
+            for i in top_indices:
+                if sims[i] > 0.0:  # 过滤相似度为0的块
+                    retrieved_chunks.append(chunks[i])
+                    
+            if not retrieved_chunks:
+                # 兜底：如果完全没有相似度，拿前几个作为上下文
+                retrieved_chunks = chunks[:3]
+        except Exception as e:
+            # 兜底降级：TF-IDF 计算报错时直接返回前几个 Chunk
+            retrieved_chunks = chunks[:3]
+
+        # 3. 构造 Prompt 调度 AI 接口
+        context = "\n\n---\n\n".join(retrieved_chunks)
+        system_prompt = "你是一个顶级的量化和基本面股票分析师。请专注于根据提供的研报上下文客观回答问题。"
+        
+        prompt = f"""你是一个资深的金融分析师。请根据以下从有关股票 {name} ({symbol}) 的研究报告中检索出的相关文本片段，回答用户的问题。
+
+【检索出的研报上下文】
+{context}
+
+【用户提问】
+{query}
+
+【回答要求】
+1. **真实客观**：必须严格根据上面检索到的“研报上下文”来进行分析和回答。若上下文中完全不包含问题的线索，请在回答开头明确指出“根据现有研报内容无法得出确切结论”，再结合行业逻辑提供合理的第三方视角的推测。
+2. **结构清晰**：请使用 Markdown 的标题、列表和加粗等格式，条理分明地分点陈述。
+3. **言简意赅**：切忌长篇大论，直接回应用户问题的核心。
+"""
+        try:
+            return self.ai.generate_response(prompt, system_prompt)
+        except Exception as e:
+            return f"⚠️ 研报智能助手回答失败: {str(e)}"

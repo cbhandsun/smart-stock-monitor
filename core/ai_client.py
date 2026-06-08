@@ -6,7 +6,7 @@ load_dotenv()
 
 API_KEY = os.environ.get("OPENAI_API_KEY", "")
 BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/") 
-MODEL = os.environ.get("OPENAI_MODEL", "gemini-3-flash")
+MODEL = os.environ.get("OPENAI_MODEL", "gemini-1.5-flash")
 
 client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
 
