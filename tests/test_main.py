@@ -18,8 +18,8 @@ class TestCacheFunctions:
         """测试缓存的写入和读取"""
         import importlib
         # 临时替换 CACHE_DIR
-        with patch('main.CACHE_DIR', str(tmp_path)):
-            with patch('main.get_cache_path') as mock_path:
+        with patch('core.file_cache.CACHE_DIR', str(tmp_path)):
+            with patch('core.file_cache.get_cache_path') as mock_path:
                 cache_file = tmp_path / "test_cache.json"
                 mock_path.return_value = str(cache_file)
 
@@ -34,15 +34,15 @@ class TestCacheFunctions:
 
     def test_load_nonexistent_cache(self, tmp_path):
         """测试读取不存在的缓存"""
-        with patch('main.get_cache_path', return_value=str(tmp_path / "nonexistent.json")):
+        with patch('core.file_cache.get_cache_path', return_value=str(tmp_path / "nonexistent.json")):
             from main import load_from_cache
             result = load_from_cache("missing_key")
             assert result is None
 
     def test_save_empty_df_does_nothing(self, empty_df, tmp_path):
         """测试空DataFrame不写入缓存"""
-        with patch('main.CACHE_DIR', str(tmp_path)):
-            with patch('main.get_cache_path', return_value=str(tmp_path / "empty.json")):
+        with patch('core.file_cache.CACHE_DIR', str(tmp_path)):
+            with patch('core.file_cache.get_cache_path', return_value=str(tmp_path / "empty.json")):
                 from main import save_to_cache
                 save_to_cache("empty_key", empty_df)
                 assert not (tmp_path / "empty.json").exists()
@@ -66,7 +66,7 @@ class TestCleanupOldCache:
         new_file = tmp_path / "new_cache_2026-03-15.json"
         new_file.write_text('{"test": 2}')
 
-        with patch('main.CACHE_DIR', str(tmp_path)):
+        with patch('core.file_cache.CACHE_DIR', str(tmp_path)):
             from main import cleanup_old_cache
             cleanup_old_cache(max_age_days=7)
 

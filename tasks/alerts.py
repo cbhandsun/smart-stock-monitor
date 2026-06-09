@@ -59,6 +59,34 @@ def _send_wecom_webhook(title: str, content: str) -> bool:
         return False
 
 
+def _send_lark_webhook(title: str, content: str) -> bool:
+    """
+    飞书 Webhook 推送 (文本消息)
+    配置方式: 环境变量 LARK_WEBHOOK_URL
+    """
+    url = os.getenv('LARK_WEBHOOK_URL', '')
+    if not url:
+        return False
+    try:
+        payload = {
+            "msg_type": "text",
+            "content": {
+                "text": f"{title}\n{content}"
+            }
+        }
+        resp = requests.post(url, json=payload, timeout=5)
+        result = resp.json()
+        if result.get('StatusCode') == 0 or result.get('code') == 0:
+            logger.info(f"[Alert] 飞书推送成功: {title}")
+            return True
+        else:
+            logger.warning(f"[Alert] 飞书推送失败: {result}")
+            return False
+    except Exception as e:
+        logger.warning(f"[Alert] 飞书推送异常: {e}")
+        return False
+
+
 def _send_generic_webhook(alert_id: str, title: str, content: str) -> bool:
     """
     通用 Webhook 推送 (POST JSON)
@@ -87,7 +115,7 @@ def _send_generic_webhook(alert_id: str, title: str, content: str) -> bool:
 
 def _deliver_notification(alert_id: str, message: str) -> str:
     """
-    通知分发 (降级链: 企微 → 通用 Webhook → 日志)
+    通知分发 (降级链: 企微 → 飞书 → 通用 Webhook → 日志)
     返回实际使用的渠道名称
     """
     title = f"📢 SSM 预警触发 [{alert_id}]"
@@ -95,6 +123,8 @@ def _deliver_notification(alert_id: str, message: str) -> str:
 
     if _send_wecom_webhook(title, content):
         return "wecom"
+    if _send_lark_webhook(title, content):
+        return "lark"
     if _send_generic_webhook(alert_id, title, content):
         return "webhook"
 

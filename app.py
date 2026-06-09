@@ -102,10 +102,10 @@ PAGE_RENDER_ARGS = {
 # ---- 认证拦截层 (Security Gatekeeper) ----
 try:
     from pages._login import check_auth, render_login_page, render_user_menu
-except ImportError:
-    check_auth = lambda: True
-    render_login_page = lambda: True
-    render_user_menu = lambda: None
+except ImportError as e:
+    logging.critical(f"Security Gatekeeper failed to load: {e}")
+    st.error("🚨 **系统安全阻断**：认证拦截器模块无法加载，访问已被终止。请联系系统管理员检查日志。")
+    st.stop()
 
 # 强验证卡口：如果未登录，阻截所有渲染并仅展示登录页
 if not check_auth():

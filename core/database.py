@@ -28,7 +28,10 @@ def get_engine():
     host = os.getenv('PG_HOST', 'postgres')
     port = os.getenv('PG_PORT', '5432')
     user = os.getenv('PG_USER', 'ssm')
-    password = os.getenv('PG_PASSWORD', 'ssm_secure_2026')
+    password = os.getenv('PG_PASSWORD')
+    if not password:
+        password = 'ssm_secure_2026'
+        logger.warning("⚠️ SECURITY WARNING: Using default database password. Please configure PG_PASSWORD in your environment/dotenv file.")
     database = os.getenv('PG_DATABASE', 'stock_data')
 
     url = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}"
@@ -171,9 +174,14 @@ def init_tables():
 
 # ---- 读写工具 ----
 
+ALLOWED_KLINE_TABLES = {'kline_daily', 'kline_weekly', 'kline_monthly'}
+
 def read_kline(ts_code: str, table: str = 'kline_daily',
                limit: int = 200) -> Optional[pd.DataFrame]:
     """从 PG 读取 K 线数据"""
+    if table not in ALLOWED_KLINE_TABLES:
+        raise ValueError(f"Unauthorized table query attempted: {table}")
+
     engine = get_engine()
     if not engine:
         return None
@@ -199,6 +207,9 @@ def read_kline(ts_code: str, table: str = 'kline_daily',
 def write_kline(df: pd.DataFrame, ts_code: str,
                 table: str = 'kline_daily'):
     """写入 K 线数据 (批量 UPSERT — executemany)"""
+    if table not in ALLOWED_KLINE_TABLES:
+        raise ValueError(f"Unauthorized table write attempted: {table}")
+
     engine = get_engine()
     if not engine or df is None or df.empty:
         return

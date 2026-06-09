@@ -142,6 +142,11 @@ def _render_concept_strategy(L, my_stocks, name_map):
         )
         return
 
+    # 检测是否为本地精选 Fallback 数据
+    is_local_fallback = not concepts.empty and concepts.iloc[0].get('src') == 'local'
+    if is_local_fallback:
+        st.info("💡 提示：当前 Tushare 接口受限（积分不足或未配置），系统已自动切换到本地精选热点概念数据库。如需获取全部 800+ 概念板块，请检查 `.env` 配置文件中的 `TUSHARE_TOKEN` 并确保积分符合门槛（通常需要 2000 积分以上）。")
+
     # ── 热词快捷按钮 (2 行) ──────────────────────────────────────
     hot_words_1 = ['人形机器人', 'AI算力', '光模块', '低空经济', '核电']
     hot_words_2 = ['芯片', '创新药', '新能源', '量子计算', '军工']

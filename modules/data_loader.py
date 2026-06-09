@@ -26,11 +26,25 @@ def is_market_closed():
     return False
 
 # Redis L1 缓存
+def get_dynamic_ttl(base_ttl=300):
+    """根据交易时段自适应计算 TTL (非交易时段自动延长)"""
+    if is_market_closed():
+        return 14400 # 4小时
+    return base_ttl
+
 try:
     from core.cache import RedisCache
     _redis = RedisCache()
     if not _redis.ping():
         _redis = None
+    else:
+        # 包装 _redis.set 以支持自适应 TTL
+        _original_set = _redis.set
+        def _adaptive_redis_set(key, val, expire=300):
+            if expire is not None and expire <= 3600:
+                expire = get_dynamic_ttl(expire)
+            return _original_set(key, val, expire=expire)
+        _redis.set = _adaptive_redis_set
 except Exception:
     _redis = None
 
@@ -40,8 +54,9 @@ def _get_cache_path(symbol, period):
 def _load_from_cache(symbol, period, ttl_seconds=600):
     cache_path = _get_cache_path(symbol, period)
     if os.path.exists(cache_path):
-        # 如果缓存未过期 (默认10分钟)
-        if time.time() - os.path.getmtime(cache_path) < ttl_seconds:
+        # 非交易时段自适应调大 TTL
+        dynamic_ttl = get_dynamic_ttl(ttl_seconds)
+        if time.time() - os.path.getmtime(cache_path) < dynamic_ttl:
             try:
                 return pd.read_pickle(cache_path)
             except Exception:
@@ -485,8 +500,64 @@ def fetch_research_reports(symbol):
     except:
         return pd.DataFrame()
 
+def _fetch_sina_batch_quotes(symbols):
+    """利用新浪批量行情接口拉取多个股票的行情 (SSM Quantum Pro)"""
+    import requests
+    import re
+    results = {}
+    
+    # 格式化 symbol，确保带上 sh/sz 前缀
+    formatted_symbols = []
+    for s in symbols:
+        s = s.strip()
+        if not s.startswith(('sh', 'sz')):
+            s = ("sh" if s.startswith('6') else "sz") + s
+        formatted_symbols.append(s)
+        
+    # 分批，每批最多 80 个
+    batch_size = 80
+    for i in range(0, len(formatted_symbols), batch_size):
+        batch = formatted_symbols[i:i+batch_size]
+        url = f"https://hq.sinajs.cn/list={','.join(batch)}"
+        headers = {'Referer': 'https://finance.sina.com.cn/'}
+        try:
+            r = requests.get(url, headers=headers, timeout=5)
+            lines = r.text.strip().split(';')
+            for line in lines:
+                if 'hq_str_' not in line or '="' not in line:
+                    continue
+                match = re.search(r'hq_str_((?:sh|sz)\d+)\s*=\s*"([^"]+)"', line)
+                if match:
+                    sym_with_prefix = match.group(1)
+                    pure_sym = sym_with_prefix[2:]  # 去掉 sh/sz
+                    parts = match.group(2).split(',')
+                    if len(parts) > 3:
+                        open_p = float(parts[1])
+                        prev_close = float(parts[2])
+                        price = float(parts[3])
+                        
+                        # 如果没有最新成交价（停牌），用昨收
+                        if price == 0:
+                            price = prev_close
+                            
+                        # 计算涨跌幅
+                        change_pct = (price - prev_close) / prev_close * 100 if prev_close > 0 else 0.0
+                        
+                        results[pure_sym] = {
+                            "最新价": price,
+                            "涨跌幅": round(change_pct, 2),
+                            "price": price,
+                            "change_pct": round(change_pct, 2),
+                            "换手率": 0.0,
+                            "量比": 1.0
+                        }
+        except Exception as e:
+            print(f"Sina batch quotes fetch error: {e}")
+            
+    return results
+
 def _fetch_single_quote(symbol):
-    """为并发获取获取单只股票的当前价格和涨跌幅"""
+    """为并发获取获取单只股票的当前价格和涨跌幅 (兜底防御)"""
     df = fetch_kline(symbol, period='daily', datalen=5)
     if not df.empty:
         latest = df.iloc[-1]
@@ -503,12 +574,96 @@ def _fetch_single_quote(symbol):
     return symbol, None
 
 def fetch_quotes_concurrent(symbols, max_workers=10):
-    """利用线程池并发获取行情，并借助缓存机制达到秒开"""
+    """利用全市场快照及批量接口优化行情获取 (SSM Quantum Pro)"""
     results = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_sym = {executor.submit(_fetch_single_quote, sym): sym for sym in symbols}
-        for future in concurrent.futures.as_completed(future_to_sym):
-            sym, data = future.result()
-            if data:
-                results[sym] = data
-    return results
+    if not symbols:
+        return results
+        
+    # 格式化 symbols 为纯数字代码
+    pure_symbols = []
+    for s in symbols:
+        s = s.strip()
+        if s.startswith(('sh', 'sz')):
+            s = s[2:]
+        pure_symbols.append(s)
+        
+    # 1. 尝试从全市场快照（已被 main.py 缓存）中查找
+    try:
+        from main import get_full_market_data
+        snapshot_df = get_full_market_data()
+        if snapshot_df is not None and not snapshot_df.empty:
+            snapshot_df = snapshot_df.copy()
+            # 确保代码列为字符串并去空
+            snapshot_df['代码'] = snapshot_df['代码'].astype(str).str.strip()
+            
+            # 列名映射兼容
+            col_map = {
+                '最新价': ['最新价', 'close', 'trade'],
+                '涨跌幅': ['涨跌幅', 'pct_chg', 'changepercent'],
+                '换手率': ['换手率', 'turnover_rate', 'turnoverratio'],
+                '量比': ['量比', 'vol_ratio', 'volume_ratio']
+            }
+            
+            def get_col_val(row, target_key, default_val=0.0):
+                for col_name in col_map.get(target_key, []):
+                    if col_name in row.index:
+                        val = row[col_name]
+                        if pd.notna(val):
+                            try:
+                                return float(val)
+                            except:
+                                pass
+                return default_val
+
+            # 对匹配成功的代码进行处理
+            matched = snapshot_df[snapshot_df['代码'].isin(pure_symbols)]
+            for _, row in matched.iterrows():
+                sym = row['代码']
+                price = get_col_val(row, '最新价', 0.0)
+                change_pct = get_col_val(row, '涨跌幅', 0.0)
+                turnover = get_col_val(row, '换手率', 0.0)
+                vol_ratio = get_col_val(row, '量比', 1.0)
+                
+                results[sym] = {
+                    "最新价": price,
+                    "涨跌幅": round(change_pct, 2),
+                    "price": price,
+                    "change_pct": round(change_pct, 2),
+                    "换手率": turnover,
+                    "量比": vol_ratio
+                }
+    except Exception as e:
+        print(f"Error reading market snapshot: {e}")
+        
+    # 2. 针对缺失的代码，使用新浪批量行情接口进行补全
+    missing = [s for s in pure_symbols if s not in results]
+    if missing:
+        try:
+            sina_results = _fetch_sina_batch_quotes(missing)
+            results.update(sina_results)
+        except Exception as e:
+            print(f"Sina batch fallback error: {e}")
+            
+    # 3. 针对仍然缺失的代码（极少见），使用原有的单股 K 线拉取做最后底线防御
+    still_missing = [s for s in pure_symbols if s not in results]
+    if still_missing:
+        fallback_results = {}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(still_missing), max_workers)) as executor:
+            future_to_sym = {executor.submit(_fetch_single_quote, sym): sym for sym in still_missing}
+            for future in concurrent.futures.as_completed(future_to_sym):
+                sym, data = future.result()
+                if data:
+                    fallback_results[sym] = data
+        results.update(fallback_results)
+        
+    # 4. 针对传入的格式做 key 兼容
+    final_results = {}
+    for original_sym in symbols:
+        original_sym_clean = original_sym.strip()
+        pure_sym = original_sym_clean
+        if pure_sym.startswith(('sh', 'sz')):
+            pure_sym = pure_sym[2:]
+        if pure_sym in results:
+            final_results[original_sym_clean] = results[pure_sym]
+            
+    return final_results

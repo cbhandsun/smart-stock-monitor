@@ -534,34 +534,73 @@ class ResearchAnalyzer:
         if not chunks:
             return "⚠️ 未能从当前研报提取到有效文本内容。"
 
-        # 2. 本地 TF-IDF 余弦相似度计算与检索 (Top-K)
+        # 2. 本地 Vector Embedding 检索 (带 TF-IDF 降级兜底)
+        retrieved_chunks = []
         try:
-            from sklearn.feature_extraction.text import TfidfVectorizer
-            from sklearn.metrics.pairwise import cosine_similarity
+            from openai import OpenAI
             import numpy as np
+            import os
+            
+            api_key = os.environ.get("OPENAI_API_KEY", "")
+            base_url = os.environ.get("OPENAI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/")
+            
+            if api_key:
+                client = OpenAI(api_key=api_key, base_url=base_url)
+                # 批量计算 chunks 的 embeddings (为防超限，取前 16 个分块)
+                chunks_to_embed = chunks[:16]
+                resp_chunks = client.embeddings.create(
+                    input=chunks_to_embed,
+                    model="text-embedding-004"
+                )
+                chunk_embeds = [d.embedding for d in resp_chunks.data]
+                
+                # 计算 query 的 embedding
+                resp_query = client.embeddings.create(
+                    input=[query],
+                    model="text-embedding-004"
+                )
+                query_embed = resp_query.data[0].embedding
+                
+                # 点乘计算相似度 (向量已归一化)
+                sims = np.dot(chunk_embeds, query_embed)
+                top_k = min(4, len(chunks_to_embed))
+                top_indices = np.argsort(sims)[::-1][:top_k]
+                
+                for i in top_indices:
+                    retrieved_chunks.append(chunks_to_embed[i])
+        except Exception as embed_err:
+            # 仅记录 warning 并不破坏系统响应，触发降级
+            import logging
+            logging.warning(f"Embedding-based RAG retrieval failed: {embed_err}. Falling back to TF-IDF.")
+            
+        # 如果 Vector Embedding 失败或者未加载成功，采用 TF-IDF 兜底
+        if not retrieved_chunks:
+            try:
+                from sklearn.feature_extraction.text import TfidfVectorizer
+                from sklearn.metrics.pairwise import cosine_similarity
+                import numpy as np
 
-            # 将用户问题与所有分块组合计算 TF-IDF 矩阵
-            vectorizer = TfidfVectorizer(token_pattern=r'(?u)\b\w+\b') # 兼容中文分词/单字
-            tfidf_matrix = vectorizer.fit_transform(chunks + [query])
-            
-            # 计算 Query（矩阵最后一行）与所有 Chunks 的余弦相似度
-            sims = cosine_similarity(tfidf_matrix[-1], tfidf_matrix[:-1]).flatten()
-            
-            # 排序获取相似度最高的前 4 个分块
-            top_k = min(4, len(chunks))
-            top_indices = np.argsort(sims)[::-1][:top_k]
-            
-            retrieved_chunks = []
-            for i in top_indices:
-                if sims[i] > 0.0:  # 过滤相似度为0的块
-                    retrieved_chunks.append(chunks[i])
-                    
-            if not retrieved_chunks:
-                # 兜底：如果完全没有相似度，拿前几个作为上下文
+                # 将用户问题与所有分块组合计算 TF-IDF 矩阵
+                vectorizer = TfidfVectorizer(token_pattern=r'(?u)\b\w+\b') # 兼容中文分词/单字
+                tfidf_matrix = vectorizer.fit_transform(chunks + [query])
+                
+                # 计算 Query（矩阵最后一行）与所有 Chunks 的余弦相似度
+                sims = cosine_similarity(tfidf_matrix[-1], tfidf_matrix[:-1]).flatten()
+                
+                # 排序获取相似度最高的前 4 个分块
+                top_k = min(4, len(chunks))
+                top_indices = np.argsort(sims)[::-1][:top_k]
+                
+                for i in top_indices:
+                    if sims[i] > 0.0:  # 过滤相似度为0的块
+                        retrieved_chunks.append(chunks[i])
+                        
+                if not retrieved_chunks:
+                    # 兜底：如果完全没有相似度，拿前几个作为上下文
+                    retrieved_chunks = chunks[:3]
+            except Exception as e:
+                # 兜底降级：TF-IDF 计算报错时直接返回前几个 Chunk
                 retrieved_chunks = chunks[:3]
-        except Exception as e:
-            # 兜底降级：TF-IDF 计算报错时直接返回前几个 Chunk
-            retrieved_chunks = chunks[:3]
 
         # 3. 构造 Prompt 调度 AI 接口
         context = "\n\n---\n\n".join(retrieved_chunks)

@@ -52,8 +52,15 @@ class TestDataSource:
 
 
 class TestDataRouter:
+    @pytest.fixture(autouse=True)
+    def setup_mocks(self):
+        from unittest.mock import patch
+        with patch('core.data_router._redis_cache', None):
+            yield
+
     def test_add_source(self):
         router = DataRouter()
+        router.sources = []
         source = MockSource(name="S1")
         router.add_source(source)
         assert len(router.sources) == 1
@@ -61,6 +68,7 @@ class TestDataRouter:
     def test_get_daily_returns_data(self):
         mock_df = pd.DataFrame({"收盘": [100, 101]})
         router = DataRouter()
+        router.sources = []
         router.add_source(MockSource(data=mock_df))
         result = router.get_daily("sh601318")
         assert result is not None
@@ -69,6 +77,7 @@ class TestDataRouter:
     def test_failover_to_next_source(self):
         mock_df = pd.DataFrame({"收盘": [100, 101]})
         router = DataRouter()
+        router.sources = []
         router.add_source(MockSource(name="Broken", fail=True, priority=1))
         router.add_source(MockSource(name="Working", data=mock_df, priority=2))
         result = router.get_daily("sh601318")
@@ -76,6 +85,7 @@ class TestDataRouter:
 
     def test_all_sources_fail(self):
         router = DataRouter()
+        router.sources = []
         router.add_source(MockSource(name="Broken1", fail=True))
         router.add_source(MockSource(name="Broken2", fail=True))
         result = router.get_daily("sh601318")
@@ -83,6 +93,7 @@ class TestDataRouter:
 
     def test_get_status(self):
         router = DataRouter()
+        router.sources = []
         router.add_source(MockSource(name="S1"))
         status = router.get_status()
         assert len(status) == 1

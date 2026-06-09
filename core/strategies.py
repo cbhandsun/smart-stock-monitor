@@ -490,28 +490,91 @@ def find_tech_breakout() -> pd.DataFrame:
         return pd.DataFrame()
 
 
+_FALLBACK_CONCEPTS = [
+    {"code": "LOCAL_001", "name": "低空经济"},
+    {"code": "LOCAL_002", "name": "人形机器人"},
+    {"code": "LOCAL_003", "name": "AI算力"},
+    {"code": "LOCAL_004", "name": "光模块"},
+    {"code": "LOCAL_005", "name": "核电"},
+    {"code": "LOCAL_006", "name": "芯片"},
+    {"code": "LOCAL_007", "name": "创新药"},
+    {"code": "LOCAL_008", "name": "新能源"},
+    {"code": "LOCAL_009", "name": "量子计算"},
+    {"code": "LOCAL_010", "name": "军工"},
+]
+
+_FALLBACK_CONCEPT_STOCKS = {
+    "LOCAL_001": [("002085", "万丰奥威"), ("000099", "中信海直"), ("002249", "卧龙电驱"), ("001696", "宗申动力")],
+    "LOCAL_002": [("002050", "三花智控"), ("601689", "拓普集团"), ("603728", "鸣志电器"), ("688017", "绿的谐波")],
+    "LOCAL_003": [("601138", "工业富联"), ("300308", "中际旭创"), ("000977", "浪潮信息"), ("603019", "中科曙光")],
+    "LOCAL_004": [("300308", "中际旭创"), ("300502", "新易盛"), ("300394", "天孚通信"), ("002811", "光迅科技")],
+    "LOCAL_005": [("601985", "中国核电"), ("003816", "中国广核"), ("600875", "东方电气"), ("000922", "佳电股份")],
+    "LOCAL_006": [("688981", "中芯国际"), ("002371", "北方华创"), ("603501", "韦尔股份"), ("603986", "兆易创新")],
+    "LOCAL_007": [("600276", "恒瑞医药"), ("688235", "百济神州"), ("603259", "药明康德"), ("600196", "复星医药")],
+    "LOCAL_008": [("300750", "宁德时代"), ("002594", "比亚迪"), ("601012", "隆基绿能"), ("600438", "通威股份")],
+    "LOCAL_009": [("688027", "国盾量子"), ("000555", "神州信息"), ("002811", "光迅科技"), ("300520", "科大国创")],
+    "LOCAL_010": [("600760", "中航沈飞"), ("002179", "中航光电"), ("601989", "中国重工"), ("600893", "航发动力")],
+}
+
+
 def find_concept_hot() -> pd.DataFrame:
     """
     概念热点: 获取 Tushare 概念板块列表供用户选择
+    若 Tushare 连接失败或积分受限，则返回本地精选概念列表作为 Fallback
     """
     ts = _get_ts()
-    if not ts.available:
-        return pd.DataFrame()
+    if ts.available:
+        try:
+            cache_key = "strat:concept_list"
+            if _redis:
+                cached = _redis.get(cache_key)
+                if cached is not None:
+                    return cached
 
-    cache_key = "strat:concept_list"
-    if _redis:
-        cached = _redis.get(cache_key)
-        if cached is not None:
-            return cached
+            df = ts.get_concept_list()
+            if df is not None and not df.empty:
+                df = df.copy()
+                df['src'] = 'tushare'
+                if _redis:
+                    _redis.set(cache_key, df, expire=3600)
+                return df
+        except Exception as e:
+            logger.warning(f"Tushare concept list fetch failed: {e}")
 
-    df = ts.get_concept_list()
-    if df is not None and not df.empty and _redis:
-        _redis.set(cache_key, df, expire=3600)
-    return df if df is not None else pd.DataFrame()
+    # Fallback to local精选概念
+    df_fallback = pd.DataFrame(_FALLBACK_CONCEPTS)
+    df_fallback['src'] = 'local'
+    return df_fallback
 
 
 def find_concept_stocks_detail(concept_id: str, concept_name: str = '') -> pd.DataFrame:
     """获取概念板块成分股 + 实时行情"""
+    if str(concept_id).startswith("LOCAL_"):
+        stock_tuples = _FALLBACK_CONCEPT_STOCKS.get(concept_id, [])
+        if not stock_tuples:
+            return pd.DataFrame()
+
+        codes = [item[0] for item in stock_tuples]
+        name_map = {item[0]: item[1] for item in stock_tuples}
+
+        from modules.data_loader import fetch_quotes_concurrent
+        try:
+            quotes = fetch_quotes_concurrent(codes)
+        except Exception:
+            quotes = {}
+
+        rows = []
+        for code in codes:
+            q = quotes.get(code, {})
+            rows.append({
+                "代码": code,
+                "名称": name_map.get(code, code),
+                "最新价": q.get("price", 0),
+                "涨跌幅": q.get("change_pct", 0),
+                "板块": concept_name,
+            })
+        return pd.DataFrame(rows)
+
     ts = _get_ts()
     if not ts.available:
         return pd.DataFrame()

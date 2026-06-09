@@ -90,7 +90,7 @@ def render(L):
                 with action_col:
                     if st.button("🗑️", key=f"del_alert_{i}_{a.symbol}",
                                 use_container_width=True, help="删除预警"):
-                        alert_manager.remove_alert(a.symbol, a.alert_type)
+                        alert_manager.remove_alert(a.id)
                         st.toast(f"已删除 {a.symbol} 的预警", icon="🗑️")
                         st.rerun()
         else:
@@ -101,14 +101,46 @@ def render(L):
             )
 
     with tab2:
+        with st.expander("📖 预警判定规则与消息推送说明（点击展开说明）", expanded=False):
+            st.markdown("""
+            ##### ⚙️ 预警工作流与执行周期
+            - **自动检测**: 系统后台集成了 **Celery 异步调度任务**。在 A 股交易时间（工作日 **09:25 - 15:05**）内，系统会高频自动轮询获取最新价格和技术指标进行规则校验。
+            - **消息推送**: 预警一旦触发，除了在系统首页及通知栏标记外，还会通过您在配置文件中配置的**飞书 / Lark / 企业微信机器人 Webhook** 实时将 Markdown 格式的消息推送到工作群。
+            
+            ##### 📋 预警条件与阈值设定指南
+            
+            | 预警类型 | 对应参数 (枚举) | 阈值单位 | 触发说明 |
+            | :--- | :--- | :--- | :--- |
+            | **价格高于** | `PRICE_ABOVE` | 价格 (元) | 最新成交价 $\\ge$ 设定阈值时触发。适用于突破买入或止盈场景。 |
+            | **价格低于** | `PRICE_BELOW` | 价格 (元) | 最新成交价 $\\le$ 设定阈值时触发。适用于回撤止损或抄底场景。 |
+            | **涨幅超过** | `CHANGE_PCT_ABOVE` | 百分比 (%) | 当日涨幅超过阈值（如输入 `5.0` 表示涨幅达到 $+5\\%$）。 |
+            | **跌幅超过** | `CHANGE_PCT_BELOW` | 百分比 (%) | 当日跌幅超过阈值（如输入 `5.0` 表示跌幅达到 $-5\\%$）。 |
+            | **RSI 高于** | `RSI_ABOVE` | 指标值 (0-100) | 14日相对强弱指标超买阈值（通常设定为 `70` 或 `80`）。 |
+            | **RSI 低于** | `RSI_BELOW` | 指标值 (0-100) | 14日相对强弱指标超卖阈值（通常设定为 `30` 或 `20`）。 |
+            """)
+
         with st.form("create_alert"):
             col1, col2 = st.columns(2)
             with col1:
                 symbol = stock_selector(key_suffix="alerts")
-                alert_type = st.selectbox("预警类型", ALERT_TYPES, format_func=lambda x: x[0])
+                alert_type = st.selectbox(
+                    "预警类型", 
+                    ALERT_TYPES, 
+                    format_func=lambda x: x[0],
+                    help="选择您想监控的触发条件类型。系统后台将根据此条件自动监测指标或股价动向。"
+                )
             with col2:
-                threshold = st.number_input("阈值", value=100.0)
-                message = st.text_input("预警消息", value="", placeholder="触发后显示的消息...")
+                threshold = st.number_input(
+                    "阈值", 
+                    value=100.0,
+                    help="触发预警的数值限制。若选择价格类预警，请输入目标价（元）；若选择涨跌幅，请输入百分比数值（如输入 5.0 代表 5%）；若选择 RSI 指标，请输入 0~100 的数值（超买常用 70，超卖常用 30）。"
+                )
+                message = st.text_input(
+                    "预警消息", 
+                    value="", 
+                    placeholder="触发后显示的消息...",
+                    help="自定义预警触发时的通知内容。若留空，系统将根据触发条件自动生成描述文字。"
+                )
 
             # 预览
             if symbol and alert_type:

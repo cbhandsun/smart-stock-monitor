@@ -63,7 +63,7 @@ def is_trading_hours(now: datetime) -> bool:
     (2024, 1, 7, 10,  0, False, "周日 10:00"),
 
     # 工作日边界
-    (2024, 1, 1, 10,  0, False, "元旦(周一)—注:函数不知节假日，但仍是工作日"),
+    (2024, 1, 1, 10,  0, True,  "元旦(周一)—注:函数不知节假日，但仍是工作日"),
 ])
 def test_is_trading_hours(year, month, day, hour, minute, expected, label):
     now = datetime(year, month, day, hour, minute, 0)

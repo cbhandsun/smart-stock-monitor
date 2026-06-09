@@ -11,28 +11,48 @@ def get_dna_score(q_metrics, day_change, vol_ratio):
     kdj_k = q_metrics.get('kdj_k', 50)
     kdj_d = q_metrics.get('kdj_d', 50)
     bb_percent = q_metrics.get('bb_percent', 50)
+    cci = q_metrics.get('cci', 0.0)
+    obv = q_metrics.get('obv', 0.0)
+    obv_ma = q_metrics.get('obv_ma', 0.0)
+    dmi_plus_di = q_metrics.get('dmi_plus_di', 0.0)
+    dmi_minus_di = q_metrics.get('dmi_minus_di', 0.0)
+    dmi_adx = q_metrics.get('dmi_adx', 0.0)
 
-    # RSI 信号
+    # 1. RSI 信号 (Max +/- 3)
     if rsi < 30: score += 3
     elif rsi > 70: score -= 3
 
-    # KDJ 信号
+    # 2. KDJ 信号 (Max +/- 2)
     if kdj_k > kdj_d and kdj_k < 40: score += 2
     elif kdj_k < kdj_d and kdj_k > 60: score -= 2
 
-    # 量价配合
+    # 3. 量价配合 (Max +/- 2)
     if vol_ratio > 1.3 and day_change > 0: score += 2
     elif vol_ratio > 1.3 and day_change < -2: score -= 2
 
-    # 布林位置
+    # 4. 布林位置 (Max +/- 1)
     if bb_percent < 15: score += 1
     elif bb_percent > 85: score -= 1
 
-    # 趋势
+    # 5. CCI 顺势指标 (Max +/- 1)
+    if cci < -100: score += 1
+    elif cci > 100: score -= 1
+
+    # 6. OBV 能量潮指标 (Max +/- 1)
+    if obv > obv_ma: score += 1
+    elif obv < obv_ma: score -= 1
+
+    # 7. DMI 趋向指标 (Max +/- 1)
+    if dmi_adx > 25:
+        if dmi_plus_di > dmi_minus_di: score += 1
+        else: score -= 1
+
+    # 8. 趋势 (Max +/- 1)
     if day_change > 3: score += 1
     elif day_change < -3: score -= 1
 
-    return score
+    # 限制得分在 -10 到 +10 之间
+    return max(min(score, 10), -10)
 
 def generate_tech_analysis(kline, q_metrics):
     """
@@ -87,6 +107,26 @@ def generate_tech_analysis(kline, q_metrics):
     
     if kdj_k > kdj_d and kdj_k < 40: indicators.append("KDJ **低位金叉** 🟢")
     elif kdj_k < kdj_d and kdj_k > 60: indicators.append("KDJ **高位死叉** 🔴")
+
+    # 新增 CCI/OBV/DMI 的文本描述集成
+    cci = q_metrics.get('cci')
+    if pd.notna(cci):
+        if cci > 100: indicators.append(f"CCI **超买偏强**（{cci:.1f}）")
+        elif cci < -100: indicators.append(f"CCI **超卖底背离**（{cci:.1f}）")
+
+    obv = q_metrics.get('obv')
+    obv_ma = q_metrics.get('obv_ma')
+    if pd.notna(obv) and pd.notna(obv_ma):
+        if obv > obv_ma: indicators.append("OBV **量增价涨，量能支持强** 📈")
+        else: indicators.append("OBV **量能偏弱，上涨持续性存疑** 📉")
+
+    dmi_plus_di = q_metrics.get('dmi_plus_di')
+    dmi_minus_di = q_metrics.get('dmi_minus_di')
+    dmi_adx = q_metrics.get('dmi_adx')
+    if pd.notna(dmi_plus_di) and pd.notna(dmi_minus_di) and pd.notna(dmi_adx):
+        if dmi_adx > 25:
+            if dmi_plus_di > dmi_minus_di: indicators.append(f"DMI **多头趋势中** (ADX:{dmi_adx:.1f})")
+            else: indicators.append(f"DMI **空头趋势中** (ADX:{dmi_adx:.1f})")
 
     # 3. 综合评分与建议
     score = get_dna_score(q_metrics, day_change, vol_ratio)

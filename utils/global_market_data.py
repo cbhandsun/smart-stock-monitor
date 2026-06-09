@@ -21,9 +21,22 @@ except Exception:
     _redis = None
 
 
+def is_us_market_active() -> bool:
+    """判断美股是否处于活跃交易时段 (SSM Quantum Pro)"""
+    from datetime import datetime
+    now = datetime.now()
+    if now.weekday() >= 5:  # 周末
+        return False
+    current_min = now.hour * 60 + now.minute
+    # 北京时间 21:30 到次日凌晨 5:00 为美股活跃期 (兼容夏令时/冬令时大致区间)
+    if current_min >= 1290 or current_min <= 300:
+        return True
+    return False
+
+
 def get_global_realtime_data() -> Dict[str, Any]:
     """
-    获取全球市场实时行情 (Sina HQ) — 缓存 60 秒
+    获取全球市场实时行情 (Sina HQ) — 缓存自适应 TTL
     包括：纳斯达克, 标普500, 道琼斯, VIXY(恐慌指数ETF), USD/CNH(离岸人民币), 富时中国A50期货
     """
     if _redis:
@@ -103,26 +116,52 @@ def get_global_realtime_data() -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Failed to fetch global realtime data from Sina: {e}")
 
-    # 2. 补充费城半导体指数 (SOX) 实时数据
-    # SOX 无法从上述接口实时获得，我们采用 AkShare 行情或者使用 Tushare 历史数据最后一天进行模拟
-    try:
-        import akshare as ak
-        # 实时用 ak.macro_global_sox_index 的最后一项
-        df_sox = ak.macro_global_sox_index()
-        if df_sox is not None and not df_sox.empty:
-            latest = df_sox.iloc[-1]
-            result["费城半导体SOX"] = {
-                "price": float(latest["最新值"]),
-                "change_pct": float(latest["涨跌幅"]),
-                "prev_close": float(latest["最新值"]) / (1 + float(latest["涨跌幅"]) / 100),
-                "time": str(latest["日期"])
-            }
-    except Exception as e:
-        logger.error(f"Failed to fetch SOX realtime data from Akshare: {e}")
+    # 2. 补充费城半导体指数 (SOX) 实时数据 (高耗时接口，独立缓存 1 小时)
+    sox_data = None
+    if _redis:
+        try:
+            sox_data = _redis.get("global:sox_realtime")
+        except Exception:
+            pass
+            
+    if sox_data is None:
+        try:
+            import akshare as ak
+            df_sox = ak.macro_global_sox_index()
+            if df_sox is not None and not df_sox.empty:
+                latest = df_sox.iloc[-1]
+                sox_data = {
+                    "price": float(latest["最新值"]),
+                    "change_pct": float(latest["涨跌幅"]),
+                    "prev_close": float(latest["最新值"]) / (1 + float(latest["涨跌幅"]) / 100),
+                    "time": str(latest["日期"])
+                }
+                if _redis:
+                    try:
+                        _redis.set("global:sox_realtime", sox_data, expire=3600)
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.error(f"Failed to fetch SOX realtime data from Akshare: {e}")
 
-    # 缓存
+    if sox_data:
+        result["费城半导体SOX"] = sox_data
+
+    # 3. 缓存自适应时间
     if result and _redis:
-        _redis.set("global:realtime_v1", result, expire=60)
+        from datetime import datetime
+        now = datetime.now()
+        if now.weekday() >= 5:
+            expire_time = 14400  # 周末直接缓存 4 小时
+        elif is_us_market_active():
+            expire_time = 60     # 美股活跃交易期缓存 60 秒
+        else:
+            expire_time = 600    # 美股休市期间缓存 10 分钟
+            
+        try:
+            _redis.set("global:realtime_v1", result, expire=expire_time)
+        except Exception:
+            pass
         
     return result
 

@@ -86,7 +86,8 @@ def render(L, name_map):
 
             with col2:
                 st.subheader("AI研报摘要")
-                if st.button("生成智能摘要", type="primary"):
+                st.caption("💡 智能提取该股的最新核心评级、目标价、投资要点及潜在风险因素。")
+                if st.button("生成智能摘要", type="primary", help="点击调用大模型综合分析该股票最新一期研报并输出摘要。"):
                     with st.spinner("AI分析中..."):
                         if not reports_df.empty:
                             real_reports = _df_to_research_reports(reports_df, symbol, stock_name)
@@ -120,9 +121,10 @@ def render(L, name_map):
 
         with tab2:
             st.subheader("多研报对比分析")
+            st.caption("💡 汇总并对比多篇研报观点，展示券商共识评级、平均目标价及核心分歧。")
             if reports_df.empty:
                 st.info("暂无研报可供对比，请等待数据更新")
-            elif st.button("开始对比分析", type="primary"):
+            elif st.button("开始对比分析", type="primary", help="点击对比已抓取的多篇机构研报，自动识别并提炼核心共识与分歧点。"):
                 real_compare = _df_to_compare_reports(reports_df, symbol, stock_name)
                 if len(real_compare) < 2:
                     st.warning("对比分析需要至少 2 篇研报")
@@ -150,6 +152,7 @@ def render(L, name_map):
 
         with tab3:
             st.subheader("评级趋势")
+            st.caption("💡 聚合统计各大机构的历史投资评级分布，辅助判断市场对该股的共识方向。")
             if not reports_df.empty:
                 rating_col = None
                 for col_name in ['最新评级', 'rating', '评级']:
@@ -172,7 +175,21 @@ def render(L, name_map):
             if reports_df.empty:
                 st.info("暂无研报数据，无法使用问答功能")
             else:
-                st.write("您可以输入任何关于该公司研报中涉及的内容，系统将自动在研报原文分块检索，并结合 AI 进行精准解答。")
+                st.html('''<div class="ssm-card" style="margin-bottom:15px; border-left:4px solid #6366f1;">
+                    <div class="ssm-card-title" style="color:#a5b4fc; font-weight:600; font-size:0.92rem; display:flex; align-items:center; gap:6px;">
+                        💡 智能研报检索问答助手指南
+                    </div>
+                    <div style="font-size:0.82rem; color:#cbd5e1; margin-top:6px; line-height:1.45;">
+                        <strong>检索增强生成 (RAG) 机制：</strong> 系统会对当前标的的历史研报原文进行智能文本分块（Chunking），并利用高维向量嵌入对您的问题进行语义匹配，自动检索关联度最高的研报上下文段落，最后将匹配文本交由大语言模型（LLM）进行提炼总结。这能极大程度避免“AI 幻觉”，确保回答有据可依。<br/>
+                        <strong style="color:#818cf8; display:block; margin-top:8px;">推荐提问示例（可复制作为参考）：</strong>
+                        <ul style="margin-top:4px; padding-left:18px; margin-bottom:0;">
+                            <li><code>这只股票核心投资亮点和增长驱动力是什么？</code></li>
+                            <li><code>各家券商研报中达成了哪些共识？有哪些核心分歧点？</code></li>
+                            <li><code>研报里提及了该公司的哪些潜在风险提示？</code></li>
+                            <li><code>公司近期的财务表现、营收预测与估值水平如何？</code></li>
+                        </ul>
+                    </div>
+                </div>''')
                 
                 # 展现对话历史
                 if "rag_chat_history" not in st.session_state:

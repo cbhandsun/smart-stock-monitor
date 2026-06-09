@@ -18,7 +18,10 @@ logger = logging.getLogger(__name__)
 try:
     from auth.user_auth import AuthManager
     _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    _SECRET = os.environ.get("JWT_SECRET_KEY", "ssm-quantum-pro-persistent-key-2026")
+    _SECRET = os.environ.get("JWT_SECRET_KEY")
+    if not _SECRET:
+        _SECRET = "ssm-quantum-pro-persistent-key-2026"
+        logger.warning("⚠️ SECURITY WARNING: Using default hardcoded JWT secret key. Please configure JWT_SECRET_KEY in your environment/dotenv file.")
     auth_manager = AuthManager(secret_key=_SECRET, data_dir=os.path.join(_BASE_DIR, "data", "users"))
     AUTH_AVAILABLE = True
 except ImportError as e:
@@ -145,7 +148,7 @@ def check_auth() -> bool:
     3. st.context.cookies（浏览器 Cookie）
     """
     if not AUTH_AVAILABLE:
-        return True
+        return False
 
     # 1. 已在 session
     if st.session_state.get('authenticated', False):
@@ -201,8 +204,8 @@ def logout():
 
 def render_login_page():
     if not AUTH_AVAILABLE:
-        st.warning("认证模块未安装，请安装 bcrypt 和 pyjwt")
-        return True
+        st.error("🚨 **系统配置错误**：认证模块依赖未安装（bcrypt 或 pyjwt 缺失），访问已被安全中止。请在服务器执行 `pip install bcrypt pyjwt` 安装依赖。")
+        st.stop()
 
     # 精品登录页
     st.html("""

@@ -78,8 +78,8 @@ def _render_stock_card(code, stock_name, price, change, rank=0, extra="",
         score_c = "var(--up-color)" if signals['score'] >= 4 else "var(--accent)"
         metrics_html = (
             f'<div style="display:flex;gap:4px; margin-top:4px;">'
-            f'<span class="status-pill" style="background:rgba(56,189,248,0.1); color:{score_c};">分{signals["score"]}</span>'
-            f'<span class="status-pill" style="background:rgba(56,189,248,0.1); color:var(--accent);">量{signals["vol_ratio"]:.1f}x</span>'
+            f'<span class="status-pill" style="background:rgba(56,189,248,0.1); color:{score_c};" title="日线级别技术面综合评分（-10 到 +10）。点击 📊 深度分析 可切换 5分/15分/30分/周线/月线 查看对应周期评分。">分{signals["score"]}</span>'
+            f'<span class="status-pill" style="background:rgba(56,189,248,0.1); color:var(--accent);" title="当前标的日线量比（当日成交量对比前 5 日平均成交量）。">量{signals["vol_ratio"]:.1f}x</span>'
             f'</div>'
         )
 

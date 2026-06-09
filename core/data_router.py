@@ -265,6 +265,15 @@ class DataRouter:
 
         # 按优先级排序
         self.sources.sort(key=lambda x: x.priority)
+
+    def add_source(self, source: DataSource):
+        """动态添加数据源并重新按优先级排序"""
+        self.sources.append(source)
+        self.sources.sort(key=lambda x: x.priority)
+
+    def get_status(self) -> List[DataSourceStatus]:
+        """获取所有数据源的当前状态"""
+        return [s.status for s in self.sources]
     
     def health_check_all(self) -> Dict[str, bool]:
         """检查所有数据源健康状态"""

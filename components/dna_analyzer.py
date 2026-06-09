@@ -158,7 +158,20 @@ def _render_tech_observation(kline, q_metrics, stock_name, stock_code):
         return "".join([f'<div style="margin-bottom:6px; color:#cbd5e1;">• {item}</div>' for item in items])
 
     signal_color = "#10b981" if score >= 3 else ("#ef4444" if score <= -3 else "#f59e0b")
-    signal_text = "核心看多" if score >= 3 else ("风险警示" if score <= -3 else "中性观望")
+    signal_text = "核心看多" if score >= 3 else ("风险警示" if score <= -3 else "#f59e0b" if score <= -2 else "中性观望")
+    if score <= -3:
+        signal_text = "风险警示"
+    elif score >= 3:
+        signal_text = "核心看多"
+    else:
+        signal_text = "中性观望"
+
+    period_map = {
+        '1min': '1分钟', '5min': '5分钟', '15min': '15分钟', 
+        '30min': '30分钟', '60min': '60分钟', 'daily': '日线', 
+        'weekly': '周线', 'monthly': '月线'
+    }
+    cur_period = period_map.get(st.session_state.get('selected_period', 'daily'), '日线')
     
     c1, c2 = st.columns(2)
     with c1:
@@ -180,6 +193,9 @@ def _render_tech_observation(kline, q_metrics, stock_name, stock_code):
 <div style="font-size:2.5rem; font-weight:800; color:{signal_color}; text-align:center; margin:15px 0;">{score:+=d}</div>
 <div style="background:rgba(255,255,255,0.03); border-radius:8px; padding:12px; margin-bottom:20px;">
 <div style="color:#e2e8f0; font-size:0.95rem; line-height:1.5;">{advice}</div>
+<div style="font-size:0.75rem; color:#64748b; line-height:1.4; margin-top:8px; padding-top:8px; border-top:1px dashed rgba(255,255,255,0.08);">
+    💡 评分周期：当前为 <strong>{cur_period}</strong>。外侧卡片评分固定基于 <strong>日线</strong> 周期，切换不同周期导致分数不同属正常现象。建议：短线参考分钟级，中长线参考日线/周线。
+</div>
 </div>
 <div style="margin-top:20px; padding-top:15px; border-top:1px solid rgba(255,255,255,0.05);">
 <div style="font-weight:700; color:#94a3b8; margin-bottom:10px;">📍 关键价位</div>
