@@ -81,6 +81,20 @@ Agent 返回提交/部署预览。
 
 Agent 仍然先返回预览，不直接执行。
 
+如果没有写 `message`，默认由 Agent 根据预览里的候选文件和 diff 摘要自动总结一个简短的 conventional commit message。例如你可以直接说：
+
+```text
+帮我提交并部署 smart-stock-monitor
+```
+
+Agent 应先生成类似下面的建议提交信息，并放进预览里：
+
+```text
+chore: harden docker deployment config
+docs: update workspace gitops bridge guide
+fix: handle cache cleanup race
+```
+
 ```text
 确认执行
 ```
@@ -115,6 +129,7 @@ diff 摘要
 部署命令
 预计访问地址
 风险提示
+建议提交信息
 确认口令
 ```
 
@@ -322,13 +337,14 @@ OpenClaw Skill：
 你在手机飞书里说：
 
 ```text
-帮我提交并部署 smart-stock-monitor，message: chore: update docker deployment
+帮我提交并部署 smart-stock-monitor
 ```
 
 OpenClaw 回复：
 
 ```text
 这是预览，请确认。
+建议提交信息：docs: update workspace gitops bridge guide
 ```
 
 你说：
