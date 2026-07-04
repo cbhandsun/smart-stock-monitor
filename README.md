@@ -118,6 +118,25 @@ smart-stock-monitor/
     └── alerts/                 # 预警数据
 ```
 
+## 🐳 Docker 部署
+
+默认 `docker-compose.yml` 面向长期部署：应用代码固定在镜像内，只暴露 Streamlit Web 端口，Redis/PostgreSQL 仅在 Docker 内网访问。
+
+```bash
+cp .env.example .env
+# 编辑 .env，填入 API Key、Tushare Token、PG_PASSWORD、JWT_SECRET_KEY 等真实值
+
+docker compose up -d --build
+```
+
+访问地址默认是 `http://服务器IP:8502`，可通过 `.env` 里的 `APP_PORT` 调整宿主机端口。
+
+开发调试时如果需要把当前源码目录挂进容器，并临时暴露 Redis/PostgreSQL：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+```
+
 ## 🛠️ 安装依赖
 
 ```bash

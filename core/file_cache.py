@@ -68,16 +68,16 @@ def save_to_cache(key: str, df: pd.DataFrame):
 
 
 def cleanup_old_cache(max_age_days: int = 7):
-    """清理超过 N 天的缓存文件"""
+    """清理超过 N 天的缓存文件 (已修复竞态条件)"""
     now = time.time()
     removed = 0
     for f in glob.glob(os.path.join(CACHE_DIR, "*.json")):
-        if now - os.path.getmtime(f) > max_age_days * 86400:
-            try:
+        try:
+            if now - os.path.getmtime(f) > max_age_days * 86400:
                 os.remove(f)
                 removed += 1
-            except OSError as e:
-                logger.warning(f"清理缓存文件失败 {f}: {e}")
+        except OSError:
+            pass  # 文件可能已被并发进程删除
     if removed:
         logger.info(f"已清理 {removed} 个过期缓存文件")
     return removed

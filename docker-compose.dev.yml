@@ -1,0 +1,20 @@
+services:
+  stock-monitor:
+    volumes:
+      - .:/app
+
+  worker:
+    volumes:
+      - .:/app
+
+  beat:
+    volumes:
+      - .:/app
+
+  redis:
+    ports:
+      - "${REDIS_PORT_ON_HOST:-6380}:6379"
+
+  postgres:
+    ports:
+      - "${PG_PORT_ON_HOST:-5433}:5432"

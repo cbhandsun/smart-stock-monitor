@@ -39,6 +39,8 @@ def get_global_realtime_data() -> Dict[str, Any]:
     获取全球市场实时行情 (Sina HQ) — 缓存自适应 TTL
     包括：纳斯达克, 标普500, 道琼斯, VIXY(恐慌指数ETF), USD/CNH(离岸人民币), 富时中国A50期货
     """
+    now = datetime.now()
+
     if _redis:
         cached = _redis.get("global:realtime_v1")
         if cached is not None:
@@ -149,8 +151,6 @@ def get_global_realtime_data() -> Dict[str, Any]:
 
     # 3. 缓存自适应时间
     if result and _redis:
-        from datetime import datetime
-        now = datetime.now()
         if now.weekday() >= 5:
             expire_time = 14400  # 周末直接缓存 4 小时
         elif is_us_market_active():

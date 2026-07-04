@@ -4,6 +4,7 @@
 __pycache__/
 *.pyc
 venv/
+.venv/
 reports/
 logs/
 cache/
@@ -11,6 +12,9 @@ cache/
 .streamlit/
 test_data/
 tests/
+scratch/
+celerybeat-schedule
+test_tv.html
 *.tar.gz
 .dockerignore
 Dockerfile

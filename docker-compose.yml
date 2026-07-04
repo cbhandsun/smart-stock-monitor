@@ -3,19 +3,17 @@ services:
     build: .
     container_name: smart-stock-monitor
     ports:
-      - "8502:8501"
-    volumes:
-      - .:/app
-      - /app/venv # 保护容器内虚拟环境，防止被宿主机覆盖
+      - "${APP_PORT:-8502}:8501"
     environment:
       - PYTHONUNBUFFERED=1
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - PG_HOST=postgres
       - PG_PORT=5432
-      - PG_USER=ssm
-      - PG_PASSWORD=ssm_secure_2026
-      - PG_DATABASE=stock_data
+      - PG_USER=${PG_USER:-ssm}
+      - PG_PASSWORD=${PG_PASSWORD:?PG_PASSWORD is required}
+      - PG_DATABASE=${PG_DATABASE:-stock_data}
+      - DATABASE_URL=postgresql://${PG_USER:-ssm}:${PG_PASSWORD:?PG_PASSWORD is required}@postgres:5432/${PG_DATABASE:-stock_data}
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
     env_file:
@@ -39,8 +37,6 @@ services:
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
-    ports:
-      - "6380:6379"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -53,16 +49,14 @@ services:
     image: postgres:16-alpine
     container_name: ssm-postgres
     environment:
-      POSTGRES_USER: ssm
-      POSTGRES_PASSWORD: ssm_secure_2026
-      POSTGRES_DB: stock_data
+      POSTGRES_USER: ${PG_USER:-ssm}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?PG_PASSWORD is required}
+      POSTGRES_DB: ${PG_DATABASE:-stock_data}
     volumes:
       - pg_data:/var/lib/postgresql/data
-    ports:
-      - "5433:5432"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ssm -d stock_data"]
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-ssm} -d ${PG_DATABASE:-stock_data}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -72,12 +66,15 @@ services:
     build: .
     container_name: ssm-worker
     command: celery -A tasks.celery_config.celery_app worker --loglevel=info -c 4
-    volumes:
-      - .:/app
-      - /app/venv
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - PG_HOST=postgres
+      - PG_PORT=5432
+      - PG_USER=${PG_USER:-ssm}
+      - PG_PASSWORD=${PG_PASSWORD:?PG_PASSWORD is required}
+      - PG_DATABASE=${PG_DATABASE:-stock_data}
+      - DATABASE_URL=postgresql://${PG_USER:-ssm}:${PG_PASSWORD:?PG_PASSWORD is required}@postgres:5432/${PG_DATABASE:-stock_data}
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
     env_file:
@@ -91,12 +88,15 @@ services:
     build: .
     container_name: ssm-beat
     command: celery -A tasks.celery_config.celery_app beat --loglevel=info
-    volumes:
-      - .:/app
-      - /app/venv
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - PG_HOST=postgres
+      - PG_PORT=5432
+      - PG_USER=${PG_USER:-ssm}
+      - PG_PASSWORD=${PG_PASSWORD:?PG_PASSWORD is required}
+      - PG_DATABASE=${PG_DATABASE:-stock_data}
+      - DATABASE_URL=postgresql://${PG_USER:-ssm}:${PG_PASSWORD:?PG_PASSWORD is required}@postgres:5432/${PG_DATABASE:-stock_data}
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
     env_file:
