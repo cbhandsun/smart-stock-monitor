@@ -278,6 +278,45 @@ commit message 长度
 deploy 只允许 docker compose
 ```
 
+## 已落地位置
+
+WSL 宿主机 Bridge：
+
+```text
+/home/juhongtao/openclaw/agent-tools/workspace-gitops/gitops_bridge.py
+```
+
+systemd user service：
+
+```text
+/home/juhongtao/.config/systemd/user/workspace-gitops.service
+```
+
+常用运维命令：
+
+```bash
+systemctl --user status workspace-gitops.service
+systemctl --user restart workspace-gitops.service
+```
+
+OpenClaw 容器侧客户端：
+
+```text
+/home/node/.openclaw/scripts/workspace-gitops-client.mjs
+```
+
+OpenClaw Skill：
+
+```text
+/home/node/.openclaw/skills/workspace-gitops/SKILL.md
+```
+
+`smart-stock-monitor` 项目级配置：
+
+```text
+/home/juhongtao/openclaw/config/workspace-dev/smart-stock-monitor/.agent-gitops.json
+```
+
 ## 最终体验
 
 你在手机飞书里说：
