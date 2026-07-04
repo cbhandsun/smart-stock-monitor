@@ -1,8 +1,10 @@
 __pycache__/
 .env
 venv/
+.venv/
 *.log
 *.pyc
+*.bak
 .ipynb_checkpoints/
 .streamlit/
 
@@ -23,3 +25,7 @@ reports/daily/
 reports/weekly/
 test_ai.py
 test_main_ai.py
+
+# Local scratch files
+scratch/
+test_tv.html
