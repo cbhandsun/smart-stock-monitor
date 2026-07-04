@@ -1,0 +1,54 @@
+{
+  "name": "smart-stock-monitor",
+  "defaultBranch": "master",
+  "appUrl": "http://服务器IP:8502",
+  "validate": [
+    "docker compose config -q"
+  ],
+  "deploy": [
+    "docker compose up -d --build",
+    "docker compose ps"
+  ],
+  "allowFiles": [
+    "*.py",
+    "*.md",
+    "*.json",
+    "*.yml",
+    "*.yaml",
+    "**/*.py",
+    "**/*.md",
+    "**/*.json",
+    "**/*.yml",
+    "**/*.yaml",
+    "Dockerfile",
+    "Dockerfile.*",
+    ".dockerignore",
+    ".gitignore",
+    ".env.example",
+    "requirements.txt"
+  ],
+  "denyFiles": [
+    ".env",
+    ".env.*",
+    "!.env.example",
+    ".venv/**",
+    "venv/**",
+    "node_modules/**",
+    "scratch/**",
+    "logs/**",
+    "cache/**",
+    "reports/**",
+    "data/cache/**",
+    "data/reports/**",
+    "__pycache__/**",
+    ".pytest_cache/**",
+    "*.bak",
+    "*.log",
+    "*.pem",
+    "*.key",
+    "id_rsa",
+    "id_ed25519",
+    "celerybeat-schedule"
+  ]
+}
+
