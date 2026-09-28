@@ -5,29 +5,41 @@ import pandas as pd
 # Add root to python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from modules.data_loader import calculate_advanced_trading_signals, fetch_trading_signals
+from modules.data_loader import (
+    calculate_advanced_trading_signals,
+    fetch_trading_signals,
+)
 from core.recommender import run_recommendation_engine
 
 
 def test_calculate_advanced_trading_signals():
     print("Testing calculate_advanced_trading_signals for 600519...")
     res = calculate_advanced_trading_signals("sh600519")
-    
+
     assert isinstance(res, dict), "Result must be a dictionary"
-    
-    required_keys = ["signal", "buy_zone", "stop_loss", "take_profit", "rsi", "macro_trend"]
+
+    required_keys = [
+        "signal",
+        "buy_zone",
+        "stop_loss",
+        "take_profit",
+        "rsi",
+        "macro_trend",
+    ]
     for key in required_keys:
         assert key in res, f"Key '{key}' is missing from the result"
-        
+
     print("Fetched execution signal:", res["signal"])
     print("Optimal buy zone:", res["buy_zone"])
     print("Stop loss:", res["stop_loss"])
     print("Take profit:", res["take_profit"])
     print("RSI-14:", res["rsi"])
     print("Macro trend direction:", res["macro_trend"])
-    
+
     assert 0 <= res["rsi"] <= 100, "RSI must be between 0 and 100"
-    assert res["macro_trend"] in ["多头", "空头", "未知"], "Invalid macro trend direction"
+    assert res["macro_trend"] in ["多头", "空头", "未知"], (
+        "Invalid macro trend direction"
+    )
     print("calculate_advanced_trading_signals passed!")
 
 
@@ -46,20 +58,28 @@ def test_recommender_integration():
     print("Testing recommender engine execution fields...")
     res = run_recommendation_engine(top_n=3)
     assert "stocks" in res, "Recommender output missing stocks key"
-    
+
     df_stocks = res["stocks"]
     assert isinstance(df_stocks, pd.DataFrame), "Stocks must be a DataFrame"
-    
+
     if not df_stocks.empty:
         required_cols = ["交易信号", "买入区间", "止损点", "止盈点"]
         for col in required_cols:
-            assert col in df_stocks.columns, f"Column '{col}' is missing from recommender output DataFrame"
-            
+            assert col in df_stocks.columns, (
+                f"Column '{col}' is missing from recommender output DataFrame"
+            )
+
         print("Recommender sample columns:")
-        print(df_stocks[["代码", "名称", "总评分", "交易信号", "买入区间", "止损点", "止盈点"]].head(2))
+        print(
+            df_stocks[
+                ["代码", "名称", "总评分", "交易信号", "买入区间", "止损点", "止盈点"]
+            ].head(2)
+        )
     else:
-        print("Recommended stock pool is empty (outside trading hours), skipping detail asserts.")
-        
+        print(
+            "Recommended stock pool is empty (outside trading hours), skipping detail asserts."
+        )
+
     print("recommender_integration passed!")
 
 

@@ -26,9 +26,9 @@
   --down-dim:      rgba(16, 185, 129, 0.12);
 
   --text-primary:  #f1f5f9;
-  --text-secondary:#94a3b8;
-  --text-muted:    #475569;
-  --text-dim:      #334155;
+  --text-secondary:#b8c4d4;
+  --text-muted:    #8fa1b8;
+  --text-dim:      #718198;
 
   --radius-sm:     6px;
   --radius-md:     10px;
@@ -504,7 +504,7 @@ hr {
 
 /* ── 非交易时段价格淡化 ──────────────────────────────────────── */
 .card-price[data-zero="true"] {
-    color: #334155 !important;
+    color: var(--text-dim) !important;
     text-decoration: line-through;
     text-decoration-color: #1e293b;
 }
@@ -546,14 +546,14 @@ hr {
 
 /* ── 二级按钮 (secondary) 调暗 ───────────────────────────────── */
 .stButton > button[kind="secondary"] {
-    background: rgba(30, 40, 70, 0.3) !important;
-    border-color: rgba(255,255,255,0.06) !important;
-    color: #64748b !important;
+    background: rgba(41, 55, 85, 0.48) !important;
+    border-color: rgba(184,196,212,0.2) !important;
+    color: var(--text-secondary) !important;
 }
 .stButton > button[kind="secondary"]:hover {
-    background: rgba(56,189,248,0.06) !important;
-    border-color: rgba(56,189,248,0.2) !important;
-    color: #94a3b8 !important;
+    background: rgba(56,189,248,0.12) !important;
+    border-color: rgba(56,189,248,0.35) !important;
+    color: var(--text-primary) !important;
 }
 
 /* ── Multiselect Tag ─────────────────────────────────────────── */
@@ -569,7 +569,7 @@ hr {
 
 /* ── Caption 增强 ────────────────────────────────────────────── */
 [data-testid="stCaptionContainer"] {
-    color: #475569 !important;
+    color: var(--text-muted) !important;
     font-size: 0.75rem !important;
 }
 
@@ -666,7 +666,7 @@ hr {
 .mbar-time {
     margin-left: auto;
     font-size: 0.62rem;
-    color: #334155;
+    color: var(--text-muted);
     font-family: 'JetBrains Mono', monospace;
     flex-shrink: 0;
     padding-left: 12px;
@@ -713,7 +713,7 @@ hr {
 }
 .ssm-brand-sub {
     font-size: 0.6rem;
-    color: #334155;
+    color: var(--text-muted);
     letter-spacing: 0.2em;
     text-transform: uppercase;
 }
@@ -737,7 +737,7 @@ hr {
 .ssm-footer-inner {
     text-align: center;
     font-size: 0.65rem;
-    color: #334155;
+    color: var(--text-dim);
     line-height: 1.8;
 }
 .ssm-version {
@@ -757,13 +757,13 @@ hr {
     border-left: 2px solid rgba(56,189,248,0.3);
     border-radius: 0 6px 6px 0;
     font-size: 0.78rem;
-    color: #64748b;
+    color: var(--text-secondary);
     margin-bottom: 10px;
     line-height: 1.5;
 }
 .strat-tab-hint {
     font-size: 0.72rem;
-    color: #475569;
+    color: var(--text-muted);
     padding: 6px 0 10px;
     display: flex;
     align-items: center;
@@ -808,7 +808,7 @@ hr {
     background: transparent !important;
     border: 1px solid transparent !important;
     border-radius: 8px !important;
-    color: #64748b !important;
+    color: var(--text-secondary) !important;
     font-size: 0.82rem !important;
     font-weight: 500 !important;
     padding: 7px 10px !important;
@@ -819,7 +819,7 @@ hr {
 [data-testid="stSidebar"] .stButton > button:hover {
     background: rgba(56,189,248,0.06) !important;
     border-color: rgba(56,189,248,0.15) !important;
-    color: #94a3b8 !important;
+    color: var(--text-primary) !important;
     transform: translateX(2px) !important;
 }
 [data-testid="stSidebar"] .stButton > button[kind="primary"] {
@@ -840,4 +840,103 @@ hr {
 [data-testid="stSidebar"] hr {
     border-color: rgba(255,255,255,0.04) !important;
     margin: 8px 0 !important;
+}
+
+/* Inline content still using the legacy neutral palette inherits readable tokens. */
+[style*="color:#334155"], [style*="color: #334155"] { color: var(--text-dim) !important; }
+[style*="color:#475569"], [style*="color: #475569"] { color: var(--text-muted) !important; }
+[style*="color:#64748b"], [style*="color: #64748b"] { color: var(--text-secondary) !important; }
+
+/* ── Responsive and accessibility safeguards ─────────────────── */
+@media (max-width: 800px) {
+    .block-container {
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 1rem 0.85rem 2rem !important;
+        overflow-x: clip;
+    }
+
+    [data-testid="stVerticalBlock"],
+    [data-testid="stHorizontalBlock"],
+    [data-testid="column"] {
+        min-width: 0 !important;
+        max-width: 100% !important;
+    }
+
+    [data-testid="stHorizontalBlock"] {
+        flex-wrap: wrap !important;
+        gap: 0.65rem !important;
+    }
+
+    [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+        flex: 1 1 100% !important;
+        width: 100% !important;
+    }
+
+    .st-key-market_view_router {
+        width: 100% !important;
+    }
+
+    .st-key-market_view_router [data-testid="stButtonGroup"] > div[role="radiogroup"] {
+        display: grid !important;
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+        width: 100% !important;
+        overflow: visible !important;
+    }
+
+    .st-key-market_view_router button {
+        min-width: 0 !important;
+        padding-inline: 0.35rem !important;
+    }
+
+    .st-key-market_view_router button p {
+        white-space: normal !important;
+    }
+
+    .market-bar,
+    .market-bar-v2,
+    .stTabs [data-baseweb="tab-list"],
+    [data-testid="stSegmentedControl"] > div {
+        max-width: 100% !important;
+        overflow-x: auto !important;
+        overscroll-behavior-inline: contain;
+        scrollbar-width: thin !important;
+        scrollbar-color: rgba(56,189,248,0.55) rgba(15,23,42,0.55);
+    }
+
+    .market-bar-v2::-webkit-scrollbar,
+    .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar {
+        display: block;
+        height: 4px;
+    }
+
+    .stTabs [data-baseweb="tab"] {
+        flex: 0 0 auto !important;
+        white-space: nowrap !important;
+    }
+
+    .market-page-header {
+        align-items: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .market-page-title {
+        font-size: 1.1rem;
+    }
+
+    .stButton > button {
+        min-height: 44px;
+        white-space: normal !important;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
 }

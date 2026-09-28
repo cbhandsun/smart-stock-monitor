@@ -1,6 +1,7 @@
 """
 📚 研报中心页面
 """
+
 import streamlit as st
 from modules.research.research_center import ResearchCenter
 from components.ui_components import page_header, stock_selector, nav_to_page
@@ -28,9 +29,16 @@ def render(L, my_stocks, name_map):
                 st.caption("📌 下一步")
                 c1, c2 = st.columns(2)
                 with c1:
-                    nav_to_page('market', '前往深度分析看盘', icon='📊', stock_code=symbol)
+                    nav_to_page(
+                        "market", "前往深度分析看盘", icon="📊", stock_code=symbol
+                    )
                 with c2:
-                    nav_to_page('research_analyzer', '用 AI 分析研报', icon='📖', stock_code=symbol)
+                    nav_to_page(
+                        "research_analyzer",
+                        "用 AI 分析研报",
+                        icon="📖",
+                        stock_code=symbol,
+                    )
             else:
                 st.info("暂无研报数据")
 

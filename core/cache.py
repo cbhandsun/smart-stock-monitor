@@ -2,16 +2,17 @@
 Redis 缓存层 — 安全 JSON 序列化版本
 使用 JSON + 自定义 DataFrame 编解码替代 pickle，消除反序列化 RCE 风险。
 """
+
 import json
 import os
 import logging
 from typing import Optional, Any, Dict
-from datetime import datetime
 
 import pandas as pd
 
 try:
     import redis
+
     REDIS_AVAILABLE = True
 except ImportError:
     REDIS_AVAILABLE = False
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 # ============================================================
 #  JSON 安全编解码 (DataFrame / dict / list / scalar 全覆盖)
 # ============================================================
+
 
 def _encode(value: Any) -> bytes:
     """将 Python 对象编码为 JSON bytes，支持 DataFrame。"""
@@ -60,13 +62,14 @@ def _decode(raw: bytes) -> Any:
 #  RedisCache
 # ============================================================
 
+
 class RedisCache:
     """Redis 缓存层 (JSON 安全序列化)"""
 
     def __init__(self, host=None, port=None, db=0, password=None):
-        host = host or os.getenv('REDIS_HOST', 'localhost')
-        port = port or int(os.getenv('REDIS_PORT', '6379'))
-        password = password or os.getenv('REDIS_PASSWORD', None)
+        host = host or os.getenv("REDIS_HOST", "localhost")
+        port = port or int(os.getenv("REDIS_PORT", "6379"))
+        password = password or os.getenv("REDIS_PASSWORD", None)
         if not REDIS_AVAILABLE:
             self.enabled = False
             self.client = None
@@ -78,11 +81,11 @@ class RedisCache:
                 db=db,
                 password=password,
                 decode_responses=False,
-                socket_connect_timeout=5
+                socket_connect_timeout=5,
             )
             self.enabled = True
-        except Exception as e:
-            logger.warning(f"Redis 连接失败: {e}")
+        except Exception:
+            logger.warning("Redis connection failed")
             self.client = None
             self.enabled = False
 
@@ -97,8 +100,8 @@ class RedisCache:
             if data:
                 return _decode(data)
             return None
-        except Exception as e:
-            logger.debug(f"Redis get error [{key}]: {e}")
+        except Exception:
+            logger.debug("Redis read failed")
             return None
 
     def set(self, key: str, value: Any, expire: int = 300) -> bool:
@@ -108,8 +111,8 @@ class RedisCache:
         try:
             self.client.setex(key, expire, _encode(value))
             return True
-        except Exception as e:
-            logger.debug(f"Redis set error [{key}]: {e}")
+        except Exception:
+            logger.debug("Redis write failed")
             return False
 
     def delete(self, key: str) -> bool:
@@ -119,8 +122,8 @@ class RedisCache:
         try:
             self.client.delete(key)
             return True
-        except Exception as e:
-            logger.debug(f"Redis delete error [{key}]: {e}")
+        except Exception:
+            logger.debug("Redis delete failed")
             return False
 
     def exists(self, key: str) -> bool:
@@ -129,8 +132,8 @@ class RedisCache:
             return False
         try:
             return self.client.exists(key) > 0
-        except Exception as e:
-            logger.debug(f"Redis exists error [{key}]: {e}")
+        except Exception:
+            logger.debug("Redis existence check failed")
             return False
 
     # ---- 股票数据专用 ----
@@ -138,13 +141,17 @@ class RedisCache:
     def get_stock_data(self, symbol: str, data_type: str = "quote") -> Optional[Dict]:
         return self.get(f"stock:{symbol}:{data_type}")
 
-    def set_stock_data(self, symbol: str, data: Any, data_type: str = "quote", expire: int = 60):
+    def set_stock_data(
+        self, symbol: str, data: Any, data_type: str = "quote", expire: int = 60
+    ):
         return self.set(f"stock:{symbol}:{data_type}", data, expire)
 
     def get_kline_data(self, symbol: str, period: str = "daily") -> Optional[Any]:
         return self.get(f"kline:{symbol}:{period}")
 
-    def set_kline_data(self, symbol: str, data: Any, period: str = "daily", expire: int = 300):
+    def set_kline_data(
+        self, symbol: str, data: Any, period: str = "daily", expire: int = 300
+    ):
         return self.set(f"kline:{symbol}:{period}", data, expire)
 
     def get_market_overview(self) -> Optional[Any]:
@@ -175,7 +182,9 @@ class RedisCache:
     def get_ai_response_cache(self, prompt_hash: str) -> Optional[str]:
         return self.get(f"ai:response:{prompt_hash}")
 
-    def set_ai_response_cache(self, prompt_hash: str, response: str, expire: int = 3600):
+    def set_ai_response_cache(
+        self, prompt_hash: str, response: str, expire: int = 3600
+    ):
         return self.set(f"ai:response:{prompt_hash}", response, expire)
 
     # ---- 计数器 ----
@@ -185,8 +194,8 @@ class RedisCache:
             return 0
         try:
             return self.client.incr(key, amount)
-        except Exception as e:
-            logger.debug(f"Redis increment error [{key}]: {e}")
+        except Exception:
+            logger.debug("Redis counter increment failed")
             return 0
 
     def get_counter(self, key: str) -> int:
@@ -195,8 +204,8 @@ class RedisCache:
         try:
             value = self.client.get(key)
             return int(value) if value else 0
-        except Exception as e:
-            logger.debug(f"Redis get counter error [{key}]: {e}")
+        except Exception:
+            logger.debug("Redis counter read failed")
             return 0
 
     def set_counter(self, key: str, value: int, expire: int = None) -> bool:
@@ -205,8 +214,8 @@ class RedisCache:
         try:
             self.client.set(key, value, ex=expire)
             return True
-        except Exception as e:
-            logger.debug(f"Redis set counter error [{key}]: {e}")
+        except Exception:
+            logger.debug("Redis counter write failed")
             return False
 
     # ---- 集合操作 ----
@@ -217,8 +226,8 @@ class RedisCache:
         try:
             self.client.sadd(key, *members)
             return True
-        except Exception as e:
-            logger.debug(f"Redis sadd error [{key}]: {e}")
+        except Exception:
+            logger.debug("Redis set update failed")
             return False
 
     def get_set_members(self, key: str) -> set:
@@ -226,21 +235,29 @@ class RedisCache:
             return set()
         try:
             return self.client.smembers(key)
-        except Exception as e:
-            logger.debug(f"Redis smembers error [{key}]: {e}")
+        except Exception:
+            logger.debug("Redis set read failed")
             return set()
 
     def clear_pattern(self, pattern: str) -> int:
         """清除匹配模式的所有键"""
         if not self.enabled or not self.client:
             return 0
+        if not isinstance(pattern, str) or not pattern or len(pattern) > 200:
+            raise ValueError("invalid Redis key pattern")
         try:
-            keys = self.client.keys(pattern)
-            if keys:
-                return self.client.delete(*keys)
-            return 0
-        except Exception as e:
-            logger.debug(f"Redis clear pattern error [{pattern}]: {e}")
+            removed = 0
+            batch = []
+            for key in self.client.scan_iter(match=pattern, count=100):
+                batch.append(key)
+                if len(batch) >= 500:
+                    removed += self.client.delete(*batch)
+                    batch.clear()
+            if batch:
+                removed += self.client.delete(*batch)
+            return removed
+        except Exception:
+            logger.debug("Redis pattern clear failed")
             return 0
 
     def ping(self) -> bool:

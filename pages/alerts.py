@@ -2,18 +2,29 @@
 🔔 预警系统页面 — V2.0
 彩色预警卡片 + 统计仪表盘 + 状态徽章
 """
+
 import streamlit as st
+import pandas as pd
+from html import escape
+
 try:
     from utils.html_renderer import render_html
 except ImportError:
-    render_html = lambda h: st.html(h)
-import pandas as pd
-from modules.alerts.alert_system import AlertManager, AlertType
-from components.ui_components import (
-    page_header, info_card, empty_state, nav_to_page, stock_selector, status_badge_html
-)
 
-alert_manager = AlertManager()
+    def render_html(h):
+        return st.html(h)
+
+
+from modules.alerts.alert_system import AlertManager, AlertType
+from modules.alerts.delivery_ledger import DeliveryLedger
+from components.ui_components import (
+    page_header,
+    info_card,
+    empty_state,
+    nav_to_page,
+    stock_selector,
+    status_badge_html,
+)
 
 # 预警类型定义 (中文标签 + 枚举)
 ALERT_TYPES = [
@@ -28,9 +39,13 @@ ALERT_TYPES = [
 
 def _alert_level_color(alert_type_value):
     """根据预警类型判断严重度颜色"""
-    danger_types = ['price_below', 'change_pct_below', 'rsi_below']
-    warning_types = ['price_above', 'change_pct_above', 'rsi_above']
-    val = alert_type_value.lower() if isinstance(alert_type_value, str) else str(alert_type_value).lower()
+    danger_types = ["price_below", "change_pct_below", "rsi_below"]
+    warning_types = ["price_above", "change_pct_above", "rsi_above"]
+    val = (
+        alert_type_value.lower()
+        if isinstance(alert_type_value, str)
+        else str(alert_type_value).lower()
+    )
     if any(t in val for t in danger_types):
         return "#ef4444", "danger"
     elif any(t in val for t in warning_types):
@@ -39,13 +54,16 @@ def _alert_level_color(alert_type_value):
 
 
 def render(L):
+    alert_manager = AlertManager()
     page_header("预警系统", icon="🔔")
 
     alerts = alert_manager.list_all_alerts()
 
     # ---- 统计仪表盘 ----
     total_triggers = sum(a.trigger_count for a in alerts) if alerts else 0
-    active_count = len([a for a in alerts if a.status.value == 'active']) if alerts else 0
+    active_count = (
+        len([a for a in alerts if a.status.value == "active"]) if alerts else 0
+    )
 
     m1, m2, m3 = st.columns(3)
     with m1:
@@ -57,17 +75,21 @@ def render(L):
 
     st.markdown("")
 
-    tab1, tab2 = st.tabs(["📋 活跃预警", "➕ 创建预警"])
+    tab1, tab2, tab3 = st.tabs(["📋 活跃预警", "➕ 创建预警", "📬 投递历史"])
 
     with tab1:
         if alerts:
             for i, a in enumerate(alerts):
                 color, level = _alert_level_color(a.alert_type.value)
                 badge = status_badge_html(a.status.value.upper(), level)
+                safe_symbol = escape(str(a.symbol), quote=True)
+                safe_type = escape(str(a.alert_type.value), quote=True)
+                safe_threshold = escape(str(a.threshold), quote=True)
+                safe_created_at = escape(str(a.created_at)[:16], quote=True)
 
-                card_col, action_col = st.columns([5, 1])
+                card_col, state_col, action_col = st.columns([4, 1, 1])
                 with card_col:
-                    st.html(f'''<div style="background: rgba(30,41,59,0.35);
+                    st.html(f"""<div style="background: rgba(30,41,59,0.35);
                         border: 1px solid rgba(255,255,255,0.06);
                         border-left: 4px solid {color};
                         border-radius: 12px; padding: 14px 18px; margin: 3px 0;
@@ -75,40 +97,76 @@ def render(L):
                         animation-delay: {i * 0.05}s;">
                         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 6px;">
                             <div>
-                                <span style="font-weight:700; color:#f1f5f9; font-size:0.95rem;">{a.symbol}</span>
-                                <span style="margin-left:8px; color:#94a3b8; font-size:0.82rem;">{a.alert_type.value}</span>
+                                <span style="font-weight:700; color:#f1f5f9; font-size:0.95rem;">{safe_symbol}</span>
+                                <span style="margin-left:8px; color:#94a3b8; font-size:0.82rem;">{safe_type}</span>
                             </div>
                             <div>{badge}</div>
                         </div>
                         <div style="display:flex; gap:20px; font-size:0.8rem; color:#94a3b8;">
-                            <span>阈值: <strong style="color:#e2e8f0;">{a.threshold}</strong></span>
+                            <span>阈值: <strong style="color:#e2e8f0;">{safe_threshold}</strong></span>
                             <span>触发: <strong style="color:#e2e8f0;">{a.trigger_count}次</strong></span>
-                            <span>创建: {str(a.created_at)[:16]}</span>
+                            <span>创建: {safe_created_at}</span>
                         </div>
-                    </div>''')
+                    </div>""")
+
+                with state_col:
+                    if a.status.value == "active":
+                        if st.button(
+                            "暂停", key=f"disable_{a.id}", use_container_width=True
+                        ):
+                            alert_manager.disable_alert(a.id)
+                            st.rerun()
+                    elif a.status.value == "disabled":
+                        if st.button(
+                            "启用", key=f"enable_{a.id}", use_container_width=True
+                        ):
+                            alert_manager.enable_alert(a.id)
+                            st.rerun()
+                    elif st.button(
+                        "重置", key=f"reset_{a.id}", use_container_width=True
+                    ):
+                        alert_manager.reset_alert(a.id)
+                        st.rerun()
 
                 with action_col:
-                    if st.button("🗑️", key=f"del_alert_{i}_{a.symbol}",
-                                use_container_width=True, help="删除预警"):
-                        alert_manager.remove_alert(a.id)
-                        st.toast(f"已删除 {a.symbol} 的预警", icon="🗑️")
+                    confirm_key = f"confirm_delete_alert_{a.id}"
+                    if st.session_state.get(confirm_key):
+                        if st.button(
+                            "确认删除",
+                            key=f"do_delete_alert_{a.id}",
+                            type="primary",
+                            use_container_width=True,
+                        ):
+                            alert_manager.remove_alert(a.id)
+                            st.session_state.pop(confirm_key, None)
+                            st.toast(f"已删除 {a.symbol} 的预警", icon="🗑️")
+                            st.rerun()
+                    elif st.button(
+                        "删除",
+                        key=f"delete_alert_{i}_{a.symbol}",
+                        use_container_width=True,
+                        help="删除前需要再次确认",
+                    ):
+                        st.session_state[confirm_key] = True
                         st.rerun()
         else:
             empty_state(
                 icon="🔔",
                 title="还没有预警规则",
-                description="创建预警规则，当条件触发时第一时间获得通知"
+                description="创建预警规则，当条件触发时第一时间获得通知",
             )
 
     with tab2:
-        with st.expander("📖 预警判定规则与消息推送说明（点击展开说明）", expanded=False):
+        with st.expander(
+            "📖 预警判定规则与消息推送说明（点击展开说明）", expanded=False
+        ):
             st.markdown("""
             ##### ⚙️ 预警工作流与执行周期
             - **自动检测**: 系统后台集成了 **Celery 异步调度任务**。在 A 股交易时间（工作日 **09:25 - 15:05**）内，系统会高频自动轮询获取最新价格和技术指标进行规则校验。
             - **消息推送**: 预警一旦触发，除了在系统首页及通知栏标记外，还会通过您在配置文件中配置的**飞书 / Lark / 企业微信机器人 Webhook** 实时将 Markdown 格式的消息推送到工作群。
-            
+
             ##### 📋 预警条件与阈值设定指南
-            
+
             | 预警类型 | 对应参数 (枚举) | 阈值单位 | 触发说明 |
             | :--- | :--- | :--- | :--- |
             | **价格高于** | `PRICE_ABOVE` | 价格 (元) | 最新成交价 $\\ge$ 设定阈值时触发。适用于突破买入或止盈场景。 |
@@ -124,44 +182,70 @@ def render(L):
             with col1:
                 symbol = stock_selector(key_suffix="alerts")
                 alert_type = st.selectbox(
-                    "预警类型", 
-                    ALERT_TYPES, 
+                    "预警类型",
+                    ALERT_TYPES,
                     format_func=lambda x: x[0],
-                    help="选择您想监控的触发条件类型。系统后台将根据此条件自动监测指标或股价动向。"
+                    help="选择您想监控的触发条件类型。系统后台将根据此条件自动监测指标或股价动向。",
                 )
             with col2:
                 threshold = st.number_input(
-                    "阈值", 
+                    "阈值",
                     value=100.0,
-                    help="触发预警的数值限制。若选择价格类预警，请输入目标价（元）；若选择涨跌幅，请输入百分比数值（如输入 5.0 代表 5%）；若选择 RSI 指标，请输入 0~100 的数值（超买常用 70，超卖常用 30）。"
+                    help="触发预警的数值限制。若选择价格类预警，请输入目标价（元）；若选择涨跌幅，请输入百分比数值（如输入 5.0 代表 5%）；若选择 RSI 指标，请输入 0~100 的数值（超买常用 70，超卖常用 30）。",
                 )
                 message = st.text_input(
-                    "预警消息", 
-                    value="", 
+                    "预警消息",
+                    value="",
                     placeholder="触发后显示的消息...",
-                    help="自定义预警触发时的通知内容。若留空，系统将根据触发条件自动生成描述文字。"
+                    help="自定义预警触发时的通知内容。若留空，系统将根据触发条件自动生成描述文字。",
                 )
 
             # 预览
             if symbol and alert_type:
                 preview_color, _ = _alert_level_color(alert_type[1].value)
-                st.html(f'''<div style="background:rgba(30,41,59,0.3); border-radius:8px;
+                st.html(f"""<div style="background:rgba(30,41,59,0.3); border-radius:8px;
                     padding:8px 14px; font-size:0.82rem; border-left:3px solid {preview_color}; margin-top:4px;">
                     📌 预览: 当 <strong>{symbol}</strong> {alert_type[0]} <strong>{threshold}</strong> 时触发
-                </div>''')
+                </div>""")
 
-            submitted = st.form_submit_button("✨ 创建预警", type="primary", use_container_width=True)
+            submitted = st.form_submit_button(
+                "✨ 创建预警", type="primary", use_container_width=True
+            )
             if submitted:
                 msg = message or f"{symbol} 触发预警"
-                alert = alert_manager.add_alert(symbol, alert_type[1], threshold, msg)
-                st.success(f"✅ 预警 '{alert.id}' 创建成功！")
-                st.rerun()
+                try:
+                    alert = alert_manager.add_alert(
+                        symbol, alert_type[1], threshold, msg
+                    )
+                    st.success(f"✅ 预警 '{alert.id}' 创建成功！")
+                    st.rerun()
+                except ValueError as exc:
+                    st.error(str(exc))
+
+    with tab3:
+        deliveries = DeliveryLedger(alert_manager.db).list_for_user(
+            alert_manager.user_id
+        )
+        if deliveries:
+            st.dataframe(deliveries, use_container_width=True, hide_index=True)
+            st.download_button(
+                "导出投递历史 CSV",
+                pd.DataFrame(deliveries).to_csv(index=False).encode("utf-8-sig"),
+                file_name="alert-delivery-history.csv",
+                mime="text/csv",
+            )
+        else:
+            empty_state(
+                icon="📬",
+                title="还没有投递记录",
+                description="预警触发后，这里会显示渠道、状态和重试次数。",
+            )
 
     # 底部导航
     st.divider()
     st.caption("📌 下一步")
     c1, c2 = st.columns(2)
     with c1:
-        nav_to_page('market', '前往市场看盘', icon='📡')
+        nav_to_page("market", "前往市场看盘", icon="📡")
     with c2:
-        nav_to_page('anomaly', '查看异常检测', icon='🚨')
+        nav_to_page("anomaly", "查看异常检测", icon="🚨")

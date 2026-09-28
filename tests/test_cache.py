@@ -2,11 +2,10 @@
 tests/test_cache.py — Redis 缓存 JSON 编解码测试
 不依赖真实 Redis 连接，只测试 _encode/_decode 编解码轮转
 """
+
 import sys
 import os
-import pytest
 import pandas as pd
-import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.cache import _encode, _decode
@@ -29,15 +28,18 @@ class TestJsonCodec:
         assert _decode(_encode(None)) is None
 
     def test_dataframe_roundtrip(self):
-        df = pd.DataFrame({
-            "a": [1, 2, 3],
-            "b": [1.1, 2.2, 3.3],
-            "c": ["x", "y", "z"],
-        })
+        df = pd.DataFrame(
+            {
+                "a": [1, 2, 3],
+                "b": [1.1, 2.2, 3.3],
+                "c": ["x", "y", "z"],
+            }
+        )
         decoded = _decode(_encode(df))
         assert isinstance(decoded, pd.DataFrame)
-        pd.testing.assert_frame_equal(decoded.reset_index(drop=True),
-                                      df.reset_index(drop=True))
+        pd.testing.assert_frame_equal(
+            decoded.reset_index(drop=True), df.reset_index(drop=True)
+        )
 
     def test_empty_dataframe_roundtrip(self):
         df = pd.DataFrame()
@@ -67,6 +69,7 @@ class TestRedisCache:
 
     def test_disabled_cache_get_returns_none(self):
         from core.cache import RedisCache
+
         cache = RedisCache.__new__(RedisCache)
         cache.enabled = False
         cache.client = None
@@ -74,6 +77,7 @@ class TestRedisCache:
 
     def test_disabled_cache_set_returns_false(self):
         from core.cache import RedisCache
+
         cache = RedisCache.__new__(RedisCache)
         cache.enabled = False
         cache.client = None
@@ -81,6 +85,7 @@ class TestRedisCache:
 
     def test_disabled_cache_exists_returns_false(self):
         from core.cache import RedisCache
+
         cache = RedisCache.__new__(RedisCache)
         cache.enabled = False
         cache.client = None
@@ -88,7 +93,31 @@ class TestRedisCache:
 
     def test_ping_returns_false_when_disabled(self):
         from core.cache import RedisCache
+
         cache = RedisCache.__new__(RedisCache)
         cache.enabled = False
         cache.client = None
         assert cache.ping() is False
+
+    def test_pattern_clear_uses_incremental_scan_and_batched_delete(self):
+        from core.cache import RedisCache
+
+        class FakeClient:
+            def __init__(self):
+                self.deleted_batches = []
+
+            def scan_iter(self, *, match, count):
+                assert match == "stock:*"
+                assert count == 100
+                return iter([f"key-{index}".encode() for index in range(501)])
+
+            def delete(self, *keys):
+                self.deleted_batches.append(keys)
+                return len(keys)
+
+        cache = RedisCache.__new__(RedisCache)
+        cache.enabled = True
+        cache.client = FakeClient()
+
+        assert cache.clear_pattern("stock:*") == 501
+        assert [len(batch) for batch in cache.client.deleted_batches] == [500, 1]

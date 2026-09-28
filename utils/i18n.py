@@ -18,7 +18,6 @@ LANG_MAP = {
         "export": "📤 导出数据",
         "export_csv": "📊 导出 CSV",
         "export_report": "📝 导出报告",
-
         # 导航
         "macro_intelligence": "🧭 宏观雷达",
         "market_discovery": "📡 实时信号流",
@@ -46,7 +45,6 @@ LANG_MAP = {
         "data_manager": "⚙️ 数据管理",
         "time_period": "时间周期",
         "indicators": "技术指标",
-
         # 市场页面
         "market_overview": "市场概览",
         "stock_analysis": "个股分析",
@@ -60,26 +58,22 @@ LANG_MAP = {
         "ai_analyzing": "🧠 AI 正在分析市场数据...",
         "analysis_done": "✅ 分析完成！",
         "report_saved": "报告已保存",
-
         # 组合管理
         "my_portfolios": "我的组合",
         "create_portfolio": "创建组合",
         "portfolio_name": "组合名称",
         "portfolio_desc": "组合描述",
-
         # 预警系统
         "active_alerts": "活跃预警",
         "create_alert": "创建预警",
         "alert_type": "预警类型",
         "threshold": "阈值",
-
         # 回测
         "start_backtest": "开始回测",
         "total_return": "总收益率",
         "annual_return": "年化收益率",
         "max_drawdown": "最大回撤",
         "sharpe_ratio": "夏普比率",
-
         # 预测
         "trend_prediction": "趋势预测",
         "risk_assessment": "风险评估",
@@ -88,7 +82,6 @@ LANG_MAP = {
         "predict_days": "预测天数",
         "current_price": "当前价格",
         "predicted_price": "预测价格",
-
         # 情绪
         "sentiment_index": "情绪指数",
         "sentiment_monitor": "情绪监控",
@@ -96,23 +89,19 @@ LANG_MAP = {
         "bullish": "看多",
         "bearish": "看空",
         "neutral": "中性",
-
         # 异常
         "realtime_anomaly": "实时异常",
         "history_anomaly": "历史异常",
         "monitor_settings": "监控设置",
-
         # 投顾
         "user_profile": "用户画像",
         "asset_allocation": "资产配置",
         "risk_eval": "风险评估",
         "investment_advice": "投资建议",
-
         # 设置
         "appearance": "外观设置",
         "system_info": "系统信息",
         "theme": "主题",
-
         # 认证
         "login": "🔑 登录",
         "register": "📝 注册",
@@ -123,7 +112,6 @@ LANG_MAP = {
         "login_success": "✅ 登录成功！",
         "login_failed": "❌ 用户名或密码错误",
     },
-
     "en": {
         # Global
         "title": "SSM Quantum",
@@ -138,7 +126,6 @@ LANG_MAP = {
         "export": "📤 Export",
         "export_csv": "📊 Export CSV",
         "export_report": "📝 Export Report",
-
         # Navigation
         "macro_intelligence": "🧭 Macro Alpha",
         "market_discovery": "📡 Signal Stream",
@@ -166,7 +153,6 @@ LANG_MAP = {
         "data_manager": "⚙️ Data Sync",
         "time_period": "Time Period",
         "indicators": "Indicators",
-
         # Market
         "market_overview": "Market Overview",
         "stock_analysis": "Stock Analysis",
@@ -180,26 +166,22 @@ LANG_MAP = {
         "ai_analyzing": "🧠 AI analyzing market data...",
         "analysis_done": "✅ Analysis complete!",
         "report_saved": "Report saved",
-
         # Portfolio
         "my_portfolios": "My Portfolios",
         "create_portfolio": "Create Portfolio",
         "portfolio_name": "Portfolio Name",
         "portfolio_desc": "Description",
-
         # Alerts
         "active_alerts": "Active Alerts",
         "create_alert": "Create Alert",
         "alert_type": "Alert Type",
         "threshold": "Threshold",
-
         # Backtest
         "start_backtest": "Start Backtest",
         "total_return": "Total Return",
         "annual_return": "Annual Return",
         "max_drawdown": "Max Drawdown",
         "sharpe_ratio": "Sharpe Ratio",
-
         # Prediction
         "trend_prediction": "Trend Prediction",
         "risk_assessment": "Risk Assessment",
@@ -208,7 +190,6 @@ LANG_MAP = {
         "predict_days": "Forecast Days",
         "current_price": "Current Price",
         "predicted_price": "Predicted Price",
-
         # Sentiment
         "sentiment_index": "Sentiment Index",
         "sentiment_monitor": "Sentiment Monitor",
@@ -216,23 +197,19 @@ LANG_MAP = {
         "bullish": "Bullish",
         "bearish": "Bearish",
         "neutral": "Neutral",
-
         # Anomaly
         "realtime_anomaly": "Real-time Anomaly",
         "history_anomaly": "Historical Anomaly",
         "monitor_settings": "Monitor Settings",
-
         # Advisor
         "user_profile": "User Profile",
         "asset_allocation": "Asset Allocation",
         "risk_eval": "Risk Evaluation",
         "investment_advice": "Investment Advice",
-
         # Settings
         "appearance": "Appearance",
         "system_info": "System Info",
         "theme": "Theme",
-
         # Auth
         "login": "🔑 Login",
         "register": "📝 Register",
@@ -242,10 +219,10 @@ LANG_MAP = {
         "logout": "🚪 Logout",
         "login_success": "✅ Login successful!",
         "login_failed": "❌ Invalid username or password",
-    }
+    },
 }
 
 
-def get_lang(lang_code: str = 'zh') -> dict:
+def get_lang(lang_code: str = "zh") -> dict:
     """获取指定语言的翻译字典"""
-    return LANG_MAP.get(lang_code, LANG_MAP['zh'])
+    return LANG_MAP.get(lang_code, LANG_MAP["zh"])

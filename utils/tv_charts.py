@@ -2,6 +2,7 @@ import streamlit.components.v1 as components
 import json
 import pandas as pd
 
+
 def render_tv_chart(df: pd.DataFrame, height=500, theme="dark", indicators=None):
     """
     使用 TradingView Lightweight Charts 渲染原生 K 线图
@@ -11,66 +12,78 @@ def render_tv_chart(df: pd.DataFrame, height=500, theme="dark", indicators=None)
 
     # 数据整理：LW Charts 需要的时间格式必须是 'YYYY-MM-DD' 字符串或 Unix Timestamp
     df = df.copy()
-    if '日期' in df.columns:
-        dt_series = pd.to_datetime(df['日期'], errors='coerce')
-    elif df.index.name == '日期':
-        dt_series = pd.to_datetime(df.index, errors='coerce')
+    if "日期" in df.columns:
+        dt_series = pd.to_datetime(df["日期"], errors="coerce")
+    elif df.index.name == "日期":
+        dt_series = pd.to_datetime(df.index, errors="coerce")
     else:
         # 强制创建一个伪造的连续日期，防止 JS 崩溃
         import datetime
+
         start_date = datetime.datetime.now() - datetime.timedelta(days=len(df))
         dt_series = pd.date_range(start=start_date, periods=len(df))
-        
+
     # 判断是否包含盘中时间 (判断小时/分钟是否全为0)
     is_intraday = (dt_series.dt.hour != 0).any() or (dt_series.dt.minute != 0).any()
-    
+
     if is_intraday:
         # Intraday 必须用 Unix Timestamp。假定当前系统的 Local Timezone 转换
-        df['time'] = dt_series.apply(lambda x: int(x.timestamp()) if pd.notnull(x) else None)
+        df["time"] = dt_series.apply(
+            lambda x: int(x.timestamp()) if pd.notnull(x) else None
+        )
     else:
         # Daily 数据推荐用 YYYY-MM-DD 字符串，避免时区偏移
-        df['time'] = dt_series.dt.strftime('%Y-%m-%d')
+        df["time"] = dt_series.dt.strftime("%Y-%m-%d")
 
     # 清洗：删除无效时间、去除重复时间、强制按时间升序 (Lightweight Charts 严格要求)
-    df = df.dropna(subset=['time'])
-    df = df.drop_duplicates(subset=['time'], keep='last')
-    df = df.sort_values(by='time')
+    df = df.dropna(subset=["time"])
+    df = df.drop_duplicates(subset=["time"], keep="last")
+    df = df.sort_values(by="time")
 
     # 主图 K 线数据与成交量数据
     kline_data = []
     volume_data = []
     for _, row in df.iterrows():
         # 处理可能的列名差异 (兼容 AKShare 默认命名与现有处理)
-        open_p = row.get('开盘', row.get('open', 0))
-        high_p = row.get('最高', row.get('high', 0))
-        low_p = row.get('最低', row.get('low', 0))
-        close_p = row.get('收盘', row.get('close', 0))
-        vol_p = row.get('成交量', row.get('volume', 0))
-        
+        open_p = row.get("开盘", row.get("open", 0))
+        high_p = row.get("最高", row.get("high", 0))
+        low_p = row.get("最低", row.get("low", 0))
+        close_p = row.get("收盘", row.get("close", 0))
+        vol_p = row.get("成交量", row.get("volume", 0))
+
         # 过滤 NaN 值，防止 JSON 注入出异常
-        if pd.isna(open_p) or pd.isna(high_p) or pd.isna(low_p) or pd.isna(close_p) or pd.isna(vol_p):
+        if (
+            pd.isna(open_p)
+            or pd.isna(high_p)
+            or pd.isna(low_p)
+            or pd.isna(close_p)
+            or pd.isna(vol_p)
+        ):
             continue
 
         c_open, c_close = float(open_p), float(close_p)
-        kline_data.append({
-            "time": row['time'],
-            "open": c_open,
-            "high": float(high_p),
-            "low": float(low_p),
-            "close": c_close
-        })
-        
+        kline_data.append(
+            {
+                "time": row["time"],
+                "open": c_open,
+                "high": float(high_p),
+                "low": float(low_p),
+                "close": c_close,
+            }
+        )
+
         # A 股习惯：涨红跌绿
-        vol_color = 'rgba(239, 68, 68, 0.5)' if c_close >= c_open else 'rgba(16, 185, 129, 0.5)'
-        volume_data.append({
-            "time": row['time'],
-            "value": float(vol_p),
-            "color": vol_color
-        })
+        vol_color = (
+            "rgba(239, 68, 68, 0.5)" if c_close >= c_open else "rgba(16, 185, 129, 0.5)"
+        )
+        volume_data.append(
+            {"time": row["time"], "value": float(vol_p), "color": vol_color}
+        )
 
     # 处理指标线 (MA, 布林带等)
     lines_data = {}
     import math
+
     if indicators:
         for ind in indicators:
             if ind in df.columns:
@@ -78,10 +91,7 @@ def render_tv_chart(df: pd.DataFrame, height=500, theme="dark", indicators=None)
                 for _, row in df.iterrows():
                     val = row[ind]
                     if pd.notna(val) and not math.isinf(val) and not pd.isna(val):
-                        line_pts.append({
-                            "time": row['time'],
-                            "value": float(val)
-                        })
+                        line_pts.append({"time": row["time"], "value": float(val)})
                 lines_data[ind] = line_pts
 
     # 序列化为 JSON
@@ -90,10 +100,10 @@ def render_tv_chart(df: pd.DataFrame, height=500, theme="dark", indicators=None)
     lines_json = json.dumps(lines_data)
 
     # 配色方案
-    is_dark = (theme == "dark")
-    bg_color = '#0e1117' if is_dark else '#ffffff'
-    text_color = '#a3a8b8' if is_dark else '#333333'
-    grid_color = 'rgba(255, 255, 255, 0.05)' if is_dark else 'rgba(0, 0, 0, 0.05)'
+    is_dark = theme == "dark"
+    bg_color = "#0e1117" if is_dark else "#ffffff"
+    text_color = "#a3a8b8" if is_dark else "#333333"
+    grid_color = "rgba(255, 255, 255, 0.05)" if is_dark else "rgba(0, 0, 0, 0.05)"
 
     # 构建 HTML 内容
     html_content = f"""
@@ -193,7 +203,7 @@ def render_tv_chart(df: pd.DataFrame, height=500, theme="dark", indicators=None)
                 }};
 
                 const chart = LightweightCharts.createChart(document.getElementById('tv_chart'), chartOptions);
-                
+
                 // 自适应尺寸
                 new ResizeObserver(entries => {{
                     if (entries.length === 0 || entries[0].target !== document.body) {{ return; }}

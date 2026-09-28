@@ -2,8 +2,9 @@
 美股联动与产业链传导分析模块 — SSM Quantum Pro
 计算美股及全球宏观因子对 A 股各大行业板块的传导得分 (USTransmissionPremium)
 """
+
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 from utils.global_market_data import get_global_realtime_data
 
@@ -17,48 +18,48 @@ US_A_SECTOR_MAPPING = {
     "robot": {
         "us_proxies": ["gb_dji"],  # 特斯拉/工业指数
         "desc": "特斯拉 Optimus 量产进展与美股机器人板块映射",
-        "coef": 0.4  # 传导系数
+        "coef": 0.4,  # 传导系数
     },
     "ai_power": {
         "us_proxies": ["费城半导体SOX", "gb_ixic"],
         "desc": "Nvidia/AMD 等 GPU 龙头走势及半导体设备传导",
-        "coef": 0.6
+        "coef": 0.6,
     },
     "ai_optical": {
         "us_proxies": ["费城半导体SOX", "gb_ixic"],
         "desc": "英伟达 GB200 光互联与 CPO/光模块产业链映射",
-        "coef": 0.7
+        "coef": 0.7,
     },
     "ai_infra": {
         "us_proxies": ["gb_ixic"],  # 液冷/服务器 (英维克, 工业富联等)
         "desc": "美股 AI 服务器与液冷散热 (Vertiv/SMCI) 传导",
-        "coef": 0.5
+        "coef": 0.5,
     },
     "ai_app": {
         "us_proxies": ["gb_ixic"],  # 微软/Palantir
         "desc": "美股 AI 软件/Agent (Microsoft/PLTR) 产业落地映射",
-        "coef": 0.4
+        "coef": 0.4,
     },
     "low_alt": {
         "us_proxies": ["gb_dji"],  # Joby/eVTOL 概念
         "desc": "美股 eVTOL 先驱 (Joby/Archer) 估值映射",
-        "coef": 0.3
+        "coef": 0.3,
     },
     "nuclear": {
         "us_proxies": ["gb_inx"],  # 标普电力股 (CEG/VST)
         "desc": "美股核电/公用事业重估 (Constellation) 映射",
-        "coef": 0.3
+        "coef": 0.3,
     },
     "quantum": {
         "us_proxies": ["gb_ixic"],
         "desc": "美股量子计算概念估值传导",
-        "coef": 0.3
+        "coef": 0.3,
     },
     "bio_drug": {
         "us_proxies": ["gb_inx"],  # 美股创新药/礼来/诺和诺德
         "desc": "美股 GLP-1/ADC 龙头 (礼来/诺和诺德) 估值溢价",
-        "coef": 0.4
-    }
+        "coef": 0.4,
+    },
 }
 
 
@@ -80,18 +81,20 @@ def calculate_us_transmission_premiums() -> Dict[str, Any]:
       }
     """
     rt_data = get_global_realtime_data()
-    
+
     premiums = {
         "sectors": {},
         "market_sentiment": {"score": 0.0, "reason": "全球市场表现平稳"},
         "risk_discount": 0.0,
-        "fx_discount": 0.0
+        "fx_discount": 0.0,
     }
-    
+
     if not rt_data:
-        logger.warning("No global realtime data available for US transmission calculation.")
+        logger.warning(
+            "No global realtime data available for US transmission calculation."
+        )
         return premiums
-    
+
     # ---- 1. 全球风险折价 (VIXY) ----
     if "恐慌指数VIXY" in rt_data:
         vixy_chg = rt_data["恐慌指数VIXY"]["change_pct"]
@@ -121,7 +124,7 @@ def calculate_us_transmission_premiums() -> Dict[str, Any]:
     # ---- 3. A股开盘情绪传导 (Nasdaq + SPX 隔夜表现) ----
     nasdaq_chg = rt_data.get("纳斯达克", {}).get("change_pct", 0.0)
     spx_chg = rt_data.get("标普500", {}).get("change_pct", 0.0)
-    
+
     avg_us_chg = (nasdaq_chg + spx_chg) / 2.0
     if abs(avg_us_chg) > 0.3:
         # 每涨跌 1% 影响 0.4 分，上限 ±1.2 分
@@ -130,42 +133,42 @@ def calculate_us_transmission_premiums() -> Dict[str, Any]:
         direction = "上扬" if avg_us_chg > 0 else "走弱"
         premiums["market_sentiment"] = {
             "score": round(sent_score, 2),
-            "reason": f"隔夜美股纳斯达克及标普平均{direction} {abs(avg_us_chg):.2f}%，开盘情绪指数对应修正。"
+            "reason": f"隔夜美股纳斯达克及标普平均{direction} {abs(avg_us_chg):.2f}%，开盘情绪指数对应修正。",
         }
 
     # ---- 4. 行业板块映射溢价 (Sector Transmission) ----
     for sector_key, config in US_A_SECTOR_MAPPING.items():
         proxies = config["us_proxies"]
         coef = config["coef"]
-        
+
         # 提取相关美股指数/龙头的涨跌幅
         changes = []
         for p in proxies:
             if p in rt_data:
                 changes.append(rt_data[p]["change_pct"])
-        
+
         if not changes:
             # 默认无溢价
             premiums["sectors"][sector_key] = {"score": 0.0, "reason": "无美股映射输入"}
             continue
-            
+
         avg_proxy_chg = sum(changes) / len(changes)
-        
+
         # 计算溢价分 = 均值涨跌幅 * 传导系数，限制在 [-1.5, +1.8] 分之间
         score = avg_proxy_chg * coef
         score = max(min(score, 1.8), -1.5)
-        
+
         reasons = []
         for p in proxies:
             if p in rt_data:
                 reasons.append(f"{p} {rt_data[p]['change_pct']:+.2f}%")
-        
+
         desc = " · ".join(reasons)
         action = "溢价加成" if score >= 0 else "折价扣减"
-        
+
         premiums["sectors"][sector_key] = {
             "score": round(score, 2),
-            "reason": f"联动美股 ({desc})，{action} {abs(score):.2f} 分 ({config['desc']})"
+            "reason": f"联动美股 ({desc})，{action} {abs(score):.2f} 分 ({config['desc']})",
         }
-        
+
     return premiums

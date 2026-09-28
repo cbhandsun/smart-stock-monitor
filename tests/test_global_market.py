@@ -34,7 +34,9 @@ def test_global_history():
         assert "date" in df.columns
         assert "close" in df.columns
         assert "change_pct" in df.columns
-        print(f"  {k}: shape={df.shape}, last_date={df['date'].iloc[-1]}, last_close={df['close'].iloc[-1]}")
+        print(
+            f"  {k}: shape={df.shape}, last_date={df['date'].iloc[-1]}, last_close={df['close'].iloc[-1]}"
+        )
 
 
 def test_us_transmission():
@@ -62,8 +64,8 @@ def test_sentiment_analyzer():
     assert isinstance(df_news, pd.DataFrame)
     print(f"News fetched for 600519: {len(df_news)} items")
     if not df_news.empty:
-        print("First news title:", df_news['新闻标题'].iloc[0])
-    
+        print("First news title:", df_news["新闻标题"].iloc[0])
+
     sent = analyze_stock_sentiment("600519", "贵州茅台")
     assert isinstance(sent, dict)
     assert "sentiment_score" in sent
@@ -81,13 +83,26 @@ def test_recommendation_engine():
     assert "stocks" in res
     assert "sectors" in res
     assert "summary" in res
-    
+
     df_stocks = res["stocks"]
     assert isinstance(df_stocks, pd.DataFrame)
     print(f"Stocks recommended count: {len(df_stocks)}")
     if not df_stocks.empty:
         print("Top recommended stocks:")
-        print(df_stocks[["排名", "代码", "名称", "总评分", "评级", "舆情分", "美股溢价", "荐股理由"]].head(3))
+        print(
+            df_stocks[
+                [
+                    "排名",
+                    "代码",
+                    "名称",
+                    "总评分",
+                    "评级",
+                    "舆情分",
+                    "美股溢价",
+                    "荐股理由",
+                ]
+            ].head(3)
+        )
         # Ensure new fields are present
         assert "舆情分" in df_stocks.columns
         assert "美股溢价" in df_stocks.columns

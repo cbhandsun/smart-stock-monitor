@@ -2,6 +2,7 @@
 文件缓存工具 — 当日 JSON 持久化层 (L2 缓存)
 从 main.py 剥离，作为独立的缓存工具模块复用。
 """
+
 import os
 import glob
 import time
@@ -14,7 +15,9 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "cache")
+CACHE_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "cache"
+)
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 
@@ -37,22 +40,21 @@ def load_from_cache(key: str) -> Optional[pd.DataFrame]:
 
     # 交易时段内加 5 分钟 TTL 检查，避免早盘前的空数据缓存霸屏全天
     now = datetime.datetime.now()
-    is_trading = (
-        now.weekday() < 5
-        and datetime.time(9, 25) <= now.time() <= datetime.time(15, 5)
-    )
+    is_trading = now.weekday() < 5 and datetime.time(
+        9, 25
+    ) <= now.time() <= datetime.time(15, 5)
     if is_trading:
         file_age = time.time() - os.path.getmtime(path)
         if file_age > 300:  # 5 分钟
-            logger.debug(f"文件缓存已过期 (交易时段 5min TTL): {key}")
+            logger.debug("File-cache entry expired")
             return None
 
     try:
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
             return pd.DataFrame(data)
-    except (json.JSONDecodeError, ValueError, KeyError) as e:
-        logger.warning(f"缓存读取失败 {path}: {e}")
+    except (json.JSONDecodeError, ValueError, KeyError):
+        logger.warning("File-cache read failed")
         return None
 
 
@@ -62,9 +64,9 @@ def save_to_cache(key: str, df: pd.DataFrame):
         return
     path = get_cache_path(key)
     try:
-        df.to_json(path, orient='records', force_ascii=False)
-    except Exception as e:
-        logger.warning(f"缓存写入失败 {path}: {e}")
+        df.to_json(path, orient="records", force_ascii=False)
+    except Exception:
+        logger.warning("File-cache write failed")
 
 
 def cleanup_old_cache(max_age_days: int = 7):

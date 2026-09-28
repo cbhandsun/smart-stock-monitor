@@ -1,0 +1,108 @@
+/* Light theme overrides. Loaded after the base institutional theme. */
+:root {
+  --bg-base: #f4f7fb;
+  --bg-surface: #ffffff;
+  --bg-elevated: rgba(255, 255, 255, 0.96);
+  --bg-glass: rgba(255, 255, 255, 0.9);
+  --border-subtle: rgba(15, 23, 42, 0.12);
+  --border-focus: rgba(2, 132, 199, 0.45);
+  --border-card: rgba(15, 23, 42, 0.14);
+  --accent: #0369a1;
+  --accent-dim: rgba(2, 132, 199, 0.12);
+  --accent-glow: rgba(2, 132, 199, 0.18);
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #52647a;
+  --text-dim: #64748b;
+  --sidebar-bg: #ffffff;
+  --main-bg: var(--bg-base);
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.1);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.12);
+  --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.16);
+}
+
+.stApp { background: var(--bg-base) !important; color: var(--text-primary) !important; }
+.stApp [data-testid="stSidebar"] {
+  background: linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%) !important;
+  border-right-color: var(--border-card) !important;
+}
+
+.market-bar,
+.market-bar-v2,
+.dna-quote-card,
+.dna-tech-box {
+  background: linear-gradient(135deg, #ffffff, #eef5fb) !important;
+  border-color: var(--border-card) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+.signal-card,
+[data-testid="stMetric"],
+.stTabs [data-baseweb="tab-list"],
+[data-testid="stSegmentedControl"] {
+  background: var(--bg-glass) !important;
+  border-color: var(--border-card) !important;
+}
+
+.signal-card:hover { background: #ffffff !important; }
+
+.stApp .stButton > button[kind="secondary"],
+.stApp [data-testid="stSidebar"] .stButton > button {
+  background: rgba(255, 255, 255, 0.72) !important;
+  border-color: rgba(15, 23, 42, 0.14) !important;
+  color: var(--text-secondary) !important;
+}
+
+.stApp [data-testid="stSidebar"] .stButton > button[kind="primary"] {
+  background: rgba(2, 132, 199, 0.12) !important;
+  border-color: rgba(2, 132, 199, 0.35) !important;
+  color: #075985 !important;
+}
+
+.stApp [data-testid="stSidebar"] [data-testid="stExpander"] {
+  background: rgba(255, 255, 255, 0.72) !important;
+  border-color: var(--border-card) !important;
+}
+
+.stApp [data-testid="stSidebar"] [data-testid="stExpander"] summary,
+.stApp [data-testid="stSidebar"] [data-testid="stExpander"] summary p,
+.stApp [data-testid="stSidebar"] [data-testid="stExpander"] summary span {
+  background: #ffffff !important;
+  color: var(--text-primary) !important;
+}
+
+.stTextInput > div > div > input,
+.stSelectbox > div > div,
+.stMultiSelect > div > div {
+  background: #ffffff !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-card) !important;
+}
+
+.ssm-brand,
+.ssm-footer,
+[data-testid="stSidebar"] hr { border-color: var(--border-card) !important; }
+
+.market-page-title,
+.mbar-price,
+[style*="color:#f1f5f9"], [style*="color: #f1f5f9"],
+[style*="color:#f8fafc"], [style*="color: #f8fafc"],
+[style*="color:#e2e8f0"], [style*="color: #e2e8f0"],
+[style*="color:#cbd5e1"], [style*="color: #cbd5e1"] {
+  color: var(--text-primary) !important;
+}
+
+[style*="color:#94a3b8"], [style*="color: #94a3b8"] {
+  color: var(--text-secondary) !important;
+}
+
+.stApp [style*="background:rgba(30,41,59"],
+.stApp [style*="background: rgba(30,41,59"] {
+  background: #ffffff !important;
+  border-color: var(--border-card) !important;
+}
+
+[data-testid="stToastContainer"] > div {
+  background: rgba(255, 255, 255, 0.98) !important;
+  color: var(--text-primary) !important;
+}

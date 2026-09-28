@@ -2,11 +2,11 @@
 舆情与事件分析模块 — SSM Quantum Pro
 获取个股最新新闻舆情并调用大模型进行情感评分和突发事件风险识别
 """
+
 import logging
 import json
 import pandas as pd
-from typing import Dict, Any, List, Tuple
-from datetime import datetime
+from typing import Dict, Any
 
 import akshare as ak
 from core.ai_client import client, MODEL
@@ -34,23 +34,23 @@ def get_stock_news(symbol: str) -> pd.DataFrame:
 
     # 转换股票代码格式，akshare 接收纯数字代码
     code = symbol
-    if symbol.startswith(('sh', 'sz')):
+    if symbol.startswith(("sh", "sz")):
         code = symbol[2:]
-    elif '.' in symbol:
-        code = symbol.split('.')[0]
+    elif "." in symbol:
+        code = symbol.split(".")[0]
 
     try:
         df = ak.stock_news_em(symbol=code)
         if df is not None and not df.empty:
             df = df.copy()
             # 仅保留需要的字段并限制前 5 条新闻
-            df = df[['新闻标题', '新闻内容', '发布时间', '文章来源']].head(5)
+            df = df[["新闻标题", "新闻内容", "发布时间", "文章来源"]].head(5)
             if _redis:
                 _redis.set(cache_key, df, expire=7200)
             return df
-    except Exception as e:
-        logger.error(f"Failed to fetch stock news for {symbol}: {e}")
-        
+    except Exception:
+        logger.error("Stock news request failed")
+
     return pd.DataFrame()
 
 
@@ -77,7 +77,7 @@ def analyze_stock_sentiment(symbol: str, name: str) -> Dict[str, Any]:
         "sentiment_label": "中性",
         "events": [],
         "is_circuit_break": False,
-        "reason": "暂无近期重大舆情"
+        "reason": "暂无近期重大舆情",
     }
 
     # 1. 获取近期个股新闻
@@ -92,8 +92,8 @@ def analyze_stock_sentiment(symbol: str, name: str) -> Dict[str, Any]:
     for idx, row in news_df.head(3).iterrows():
         title = row["新闻标题"]
         content = row["新闻内容"][:120] if isinstance(row["新闻内容"], str) else ""
-        news_items.append(f"【新闻 {idx+1}】\n标题：{title}\n摘要：{content}\n")
-    
+        news_items.append(f"【新闻 {idx + 1}】\n标题：{title}\n摘要：{content}\n")
+
     news_context = "\n".join(news_items)
 
     prompt = f"""
@@ -118,32 +118,35 @@ def analyze_stock_sentiment(symbol: str, name: str) -> Dict[str, Any]:
         response = client.chat.completions.create(
             model=MODEL,
             messages=[
-                {"role": "system", "content": "You are a professional financial risk controller and output only raw JSON."},
-                {"role": "user", "content": prompt}
+                {
+                    "role": "system",
+                    "content": "You are a professional financial risk controller and output only raw JSON.",
+                },
+                {"role": "user", "content": prompt},
             ],
             temperature=0.2,
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
         )
-        
+
         content = response.choices[0].message.content.strip()
         parsed = json.loads(content)
-        
+
         # 结果完整性校验和值限制
         score = float(parsed.get("sentiment_score", 0.0))
         score = max(min(score, 1.5), -1.5)
-        
+
         result = {
             "sentiment_score": score,
             "sentiment_label": parsed.get("sentiment_label", "中性"),
             "events": parsed.get("events", []),
             "is_circuit_break": bool(parsed.get("is_circuit_break", False)),
-            "reason": parsed.get("reason", "舆情分析完成")
+            "reason": parsed.get("reason", "舆情分析完成"),
         }
-        
+
         if _redis:
-            _redis.set(cache_key, result, expire=7200) # 缓存 2 小时
+            _redis.set(cache_key, result, expire=7200)  # 缓存 2 小时
         return result
 
-    except Exception as e:
-        logger.error(f"LLM sentiment analysis failed for {symbol}: {e}")
+    except Exception:
+        logger.error("LLM sentiment analysis failed")
         return default_result

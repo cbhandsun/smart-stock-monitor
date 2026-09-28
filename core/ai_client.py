@@ -5,33 +5,48 @@ from dotenv import load_dotenv
 load_dotenv()
 
 API_KEY = os.environ.get("OPENAI_API_KEY", "")
-BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/") 
+BASE_URL = os.environ.get(
+    "OPENAI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/"
+)
 MODEL = os.environ.get("OPENAI_MODEL", "gemini-1.5-flash")
 
 client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
 
-def call_ai_for_stock_diagnosis(symbol, name, reports_df, signals, dna_score=0, dna_tags=None):
+
+def call_ai_for_stock_diagnosis(
+    symbol, name, reports_df, signals, dna_score=0, dna_tags=None
+):
     """
     使用大模型生成个股诊断报告 - 增加 DNA 引擎结论
     """
-    return "".join(list(call_ai_for_stock_diagnosis_stream(symbol, name, reports_df, signals, dna_score, dna_tags)))
+    return "".join(
+        list(
+            call_ai_for_stock_diagnosis_stream(
+                symbol, name, reports_df, signals, dna_score, dna_tags
+            )
+        )
+    )
 
-def call_ai_for_stock_diagnosis_stream(symbol, name, reports_df, signals, dna_score=0, dna_tags=None):
+
+def call_ai_for_stock_diagnosis_stream(
+    symbol, name, reports_df, signals, dna_score=0, dna_tags=None
+):
     """
     流式生成个股诊断报告 - 增加 DNA 引擎结论
     """
-    if dna_tags is None: dna_tags = []
-    
+    if dna_tags is None:
+        dna_tags = []
+
     reports_text = "暂无近期研报"
     if not reports_df.empty:
         reports_text = reports_df.to_string()
-        
+
     prompt = f"""
 你是一个资深的A股量化与基本面分析师。请根据以下我提供的数据，为股票 {name} ({symbol}) 撰写一份简短、专业、犀利的 AI 智能诊断摘要。
 
 【内部量化评分结论】
 - DNA 技术综合评分: {dna_score} (范围 -10 到 +10，正分看多，负分看空)
-- 系统侦测标签: {', '.join(dna_tags)}
+- 系统侦测标签: {", ".join(dna_tags)}
 
 【基础技术面数据】
 {signals}
@@ -51,10 +66,10 @@ def call_ai_for_stock_diagnosis_stream(symbol, name, reports_df, signals, dna_sc
             model=MODEL,
             messages=[
                 {"role": "system", "content": "你是一个顶级的量化和基本面股票分析师。"},
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": prompt},
             ],
             temperature=0.6,
-            stream=True
+            stream=True,
         )
         for chunk in response:
             if chunk.choices[0].delta.content:

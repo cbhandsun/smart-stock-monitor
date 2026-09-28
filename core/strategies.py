@@ -5,7 +5,6 @@
 
 import logging
 from datetime import datetime, timedelta
-from typing import Optional
 
 import pandas as pd
 
@@ -14,6 +13,7 @@ logger = logging.getLogger(__name__)
 # Redis
 try:
     from core.cache import RedisCache
+
     _redis = RedisCache()
     if not _redis.ping():
         _redis = None
@@ -40,9 +40,8 @@ HOTSPOT_2026 = {
             "002747",  # 埃斯顿 — 六轴机器人整机
             "300503",  # 昊志机电 — 谐波减速器 + 电主轴
             "603728",  # 鸣志电器 — 步进/混合式电机
-        ]
+        ],
     },
-
     # ── 赛道 2a：AI 芯片算力 (国产替代 + 半导体设备) ───────────
     "ai_power": {
         "name": "⚡ AI芯片",
@@ -57,9 +56,8 @@ HOTSPOT_2026 = {
             "300604",  # 长川科技 — 半导体测试设备
             "300274",  # 阳光电源 — 光存储/SiC 功率器件
             "688082",  # 中船汉光 — 光芯片封装
-        ]
+        ],
     },
-
     # ── 赛道 2b：AI 光通信 (2026 最强硬件主线，业绩兑现期) ─────
     "ai_optical": {
         "name": "🔆 AI光通信",
@@ -74,9 +72,8 @@ HOTSPOT_2026 = {
             "300672",  # 长光华芯 — 高功率激光芯片
             "301007",  # 晶盛机电 — 光模块封装测试设备
             "300641",  # 正弦电气 — 光模块结构件
-        ]
+        ],
     },
-
     # ── 赛道 2c：AI 算力硬件 (服务器 / 液冷散热) ────────────────
     "ai_infra": {
         "name": "🖥️ AI算力硬件",
@@ -91,9 +88,8 @@ HOTSPOT_2026 = {
             "002416",  # 爱施德 — AI 硬件分销 + 增值服务
             "300773",  # 拉普拉斯 — 热管理系统
             "600854",  # 春兰股份 — 液冷热交换器
-        ]
+        ],
     },
-
     # ── 赛道 2d：AI 应用 & 大模型 (Agent 智能体元年) ──────────
     "ai_app": {
         "name": "🧠 AI大模型",
@@ -108,9 +104,8 @@ HOTSPOT_2026 = {
             "300418",  # 昆仑数据 — 企业级数据智能
             "002236",  # 大华股份 — AI 视觉应用，城市智能化
             "300454",  # 深信服 — AI 网络安全，零信任 Agent
-        ]
+        ],
     },
-
     # ── 赛道 3：低空经济 & 商业航天 (政策驱动万亿赛道) ────────
     "low_alt": {
         "name": "🛩️ 低空经济",
@@ -125,13 +120,12 @@ HOTSPOT_2026 = {
             "300741",  # 华菱精工 — 无人机结构件
             "002097",  # 山河智能 — 通用航空设备
             "300489",  # 中飞股份 — 航空铝材
-        ]
+        ],
     },
-
     # ── 赛道 4：核电 & 电力能源 (AI 用电爆发，核电重估) ────────
     "nuclear": {
         "name": "☢️ 核电能源",
-        "desc": "\"AI 的尽头是电力\" — 数据中心用电激增推动核电重估：运营商 + 装备制造 + 特高压",
+        "desc": '"AI 的尽头是电力" — 数据中心用电激增推动核电重估：运营商 + 装备制造 + 特高压',
         "color": "#10b981",
         "stocks": [
             "601985",  # 中国核电 — 国内核电运营双寡头
@@ -142,9 +136,8 @@ HOTSPOT_2026 = {
             "300185",  # 格力博 — 核电辅助
             "600886",  # 国投电力 — 水核电综合运营
             "601668",  # 中国建筑 — 核电工程总承包
-        ]
+        ],
     },
-
     # ── 赛道 5：创新药 & 生物科技 (出海 + ADC 双主线) ─────────
     "bio_drug": {
         "name": "🧬 创新药",
@@ -159,13 +152,12 @@ HOTSPOT_2026 = {
             "688258",  # 荣昌生物 — ADC 国产先驱
             "688116",  # 天境生物 — CD47 靶点
             "300760",  # 迈瑞医疗 — 医疗器械龙头
-        ]
+        ],
     },
-
     # ── 赛道 6：量子科技 & 国产信创 (十五五战略产业) ──────────
     "quantum": {
         "name": "⚛️ 量子科技",
-        "desc": "\"十五五\" 未来产业之首：量子计算整机交付、量子通信骨干网、国产算力信创替代",
+        "desc": '"十五五" 未来产业之首：量子计算整机交付、量子通信骨干网、国产算力信创替代',
         "color": "#06b6d4",
         "stocks": [
             "688027",  # 国盾量子 — A股量子科技标杆，量子计算+通信
@@ -176,7 +168,7 @@ HOTSPOT_2026 = {
             "300604",  # 长川科技 — 半导体测试设备
             "688168",  # 安博通 — 量子密钥分发 + 网络安全
             "688009",  # 中国通号 — 量子通信基础网络
-        ]
+        ],
     },
 }
 
@@ -185,9 +177,11 @@ HOTSPOT_2026 = {
 #  策略函数
 # ============================================================
 
+
 def _get_ts():
     """获取 Tushare 客户端"""
     from core.tushare_client import get_ts_client
+
     return get_ts_client()
 
 
@@ -226,13 +220,15 @@ def find_hotspot_stocks(sector_key: str = None) -> pd.DataFrame:
     rows = []
     for sym in all_symbols:
         q = live_quotes.get(sym, {})
-        rows.append({
-            "代码": sym,
-            "名称": name_map.get(sym, sym),
-            "最新价": q.get("price", 0),
-            "涨跌幅": q.get("change_pct", 0),
-            "板块": symbol_sector.get(sym, ""),
-        })
+        rows.append(
+            {
+                "代码": sym,
+                "名称": name_map.get(sym, sym),
+                "最新价": q.get("price", 0),
+                "涨跌幅": q.get("change_pct", 0),
+                "板块": symbol_sector.get(sym, ""),
+            }
+        )
 
     df = pd.DataFrame(rows)
     if not df.empty and _redis:
@@ -258,11 +254,13 @@ def find_mainforce_stocks() -> pd.DataFrame:
         # 获取最近交易日的全市场资金流
         results = []
         for i in range(5):
-            d = (datetime.now() - timedelta(days=i)).strftime('%Y%m%d')
+            d = (datetime.now() - timedelta(days=i)).strftime("%Y%m%d")
             ts._rate_limit()
             try:
-                mf = ts.pro.moneyflow(trade_date=d,
-                    fields='ts_code,trade_date,buy_elg_vol,sell_elg_vol,buy_lg_vol,sell_lg_vol,net_mf_vol')
+                mf = ts.pro.moneyflow(
+                    trade_date=d,
+                    fields="ts_code,trade_date,buy_elg_vol,sell_elg_vol,buy_lg_vol,sell_lg_vol,net_mf_vol",
+                )
                 if mf is not None and not mf.empty:
                     results.append(mf)
                     if len(results) >= 3:
@@ -275,20 +273,22 @@ def find_mainforce_stocks() -> pd.DataFrame:
 
         # 合并3日数据
         combined = pd.concat(results, ignore_index=True)
-        combined['net_big'] = (
-            combined['buy_elg_vol'].astype(float) - combined['sell_elg_vol'].astype(float) +
-            combined['buy_lg_vol'].astype(float) - combined['sell_lg_vol'].astype(float)
+        combined["net_big"] = (
+            combined["buy_elg_vol"].astype(float)
+            - combined["sell_elg_vol"].astype(float)
+            + combined["buy_lg_vol"].astype(float)
+            - combined["sell_lg_vol"].astype(float)
         )
 
         # 找连续3日净流入的股票
-        dates = combined['trade_date'].unique()
+        dates = combined["trade_date"].unique()
         if len(dates) < 3:
             return pd.DataFrame()
 
         date_sets = []
         for d in sorted(dates)[-3:]:
-            day_data = combined[combined['trade_date'] == d]
-            inflow = set(day_data[day_data['net_big'] > 0]['ts_code'].tolist())
+            day_data = combined[combined["trade_date"] == d]
+            inflow = set(day_data[day_data["net_big"] > 0]["ts_code"].tolist())
             date_sets.append(inflow)
 
         # 交集: 连续3日都在净流入
@@ -301,36 +301,41 @@ def find_mainforce_stocks() -> pd.DataFrame:
 
         # 取净流入最大的 top 15
         latest = results[0]
-        latest['net_big'] = (
-            latest['buy_elg_vol'].astype(float) - latest['sell_elg_vol'].astype(float) +
-            latest['buy_lg_vol'].astype(float) - latest['sell_lg_vol'].astype(float)
+        latest["net_big"] = (
+            latest["buy_elg_vol"].astype(float)
+            - latest["sell_elg_vol"].astype(float)
+            + latest["buy_lg_vol"].astype(float)
+            - latest["sell_lg_vol"].astype(float)
         )
-        candidates = latest[latest['ts_code'].isin(consistent)].copy()
-        candidates = candidates.sort_values('net_big', ascending=False).head(15)
+        candidates = latest[latest["ts_code"].isin(consistent)].copy()
+        candidates = candidates.sort_values("net_big", ascending=False).head(15)
 
         # 获取名称和行情
         name_map = ts.get_name_map()
-        codes = [row['ts_code'].split('.')[0] for _, row in candidates.iterrows()]
+        codes = [row["ts_code"].split(".")[0] for _, row in candidates.iterrows()]
         from modules.data_loader import fetch_quotes_concurrent
+
         quotes = fetch_quotes_concurrent(codes)
         rows = []
         for _, row in candidates.iterrows():
-            code = row['ts_code'].split('.')[0]
+            code = row["ts_code"].split(".")[0]
             q = quotes.get(code, {})
-            rows.append({
-                "代码": code,
-                "名称": name_map.get(code, code),
-                "最新价": q.get("price", 0.0),
-                "涨跌幅": q.get("change_pct", 0.0),
-                "主力净流入": f"{row['net_big']/10000:.0f}万手",
-            })
+            rows.append(
+                {
+                    "代码": code,
+                    "名称": name_map.get(code, code),
+                    "最新价": q.get("price", 0.0),
+                    "涨跌幅": q.get("change_pct", 0.0),
+                    "主力净流入": f"{row['net_big'] / 10000:.0f}万手",
+                }
+            )
 
         df = pd.DataFrame(rows)
         if not df.empty and _redis:
             _redis.set(cache_key, df, expire=300)
         return df
-    except Exception as e:
-        logger.error(f"主力吸筹策略失败: {e}")
+    except Exception:
+        logger.error("Main-force accumulation strategy failed")
         return pd.DataFrame()
 
 
@@ -351,11 +356,11 @@ def find_northbound_top() -> pd.DataFrame:
     try:
         # 尝试最近5天找到数据
         for i in range(5):
-            d = (datetime.now() - timedelta(days=i)).strftime('%Y%m%d')
+            d = (datetime.now() - timedelta(days=i)).strftime("%Y%m%d")
             ts._rate_limit()
             try:
-                df = ts.pro.hsgt_top10(trade_date=d, market_type='1')  # 沪股通
-                df2 = ts.pro.hsgt_top10(trade_date=d, market_type='3')  # 深股通
+                df = ts.pro.hsgt_top10(trade_date=d, market_type="1")  # 沪股通
+                df2 = ts.pro.hsgt_top10(trade_date=d, market_type="3")  # 深股通
                 if df is not None and not df.empty:
                     break
             except Exception:
@@ -375,28 +380,31 @@ def find_northbound_top() -> pd.DataFrame:
         combined = pd.concat(frames, ignore_index=True)
 
         name_map = ts.get_name_map()
-        codes = [row['ts_code'].split('.')[0] for _, row in combined.iterrows()]
+        codes = [row["ts_code"].split(".")[0] for _, row in combined.iterrows()]
         from modules.data_loader import fetch_quotes_concurrent
+
         quotes = fetch_quotes_concurrent(codes)
         rows = []
         for _, row in combined.iterrows():
-            code = row['ts_code'].split('.')[0]
+            code = row["ts_code"].split(".")[0]
             q = quotes.get(code, {})
-            net_buy = float(row.get('amount', 0) or 0)
-            rows.append({
-                "代码": code,
-                "名称": row.get('name', name_map.get(code, code)),
-                "最新价": q.get("price", 0.0),
-                "涨跌幅": q.get("change_pct", 0.0),
-                "净买入(亿)": f"{net_buy/1e4:.2f}" if net_buy else "0",
-            })
+            net_buy = float(row.get("amount", 0) or 0)
+            rows.append(
+                {
+                    "代码": code,
+                    "名称": row.get("name", name_map.get(code, code)),
+                    "最新价": q.get("price", 0.0),
+                    "涨跌幅": q.get("change_pct", 0.0),
+                    "净买入(亿)": f"{net_buy / 1e4:.2f}" if net_buy else "0",
+                }
+            )
 
         result = pd.DataFrame(rows)
         if not result.empty and _redis:
             _redis.set(cache_key, result, expire=300)
         return result
-    except Exception as e:
-        logger.error(f"北向最爱策略失败: {e}")
+    except Exception:
+        logger.error("Northbound strategy failed")
         return pd.DataFrame()
 
 
@@ -422,12 +430,13 @@ def find_tech_breakout() -> pd.DataFrame:
             return pd.DataFrame()
 
         # 取涨幅 1~8% 且成交量靠前的候选
-        snap['pct_chg'] = pd.to_numeric(snap['pct_chg'], errors='coerce')
-        snap['vol'] = pd.to_numeric(snap['vol'], errors='coerce')
-        candidates = snap[
-            (snap['pct_chg'] > 1) & (snap['pct_chg'] < 8) &
-            (snap['vol'] > 0)
-        ].sort_values('vol', ascending=False).head(50)
+        snap["pct_chg"] = pd.to_numeric(snap["pct_chg"], errors="coerce")
+        snap["vol"] = pd.to_numeric(snap["vol"], errors="coerce")
+        candidates = (
+            snap[(snap["pct_chg"] > 1) & (snap["pct_chg"] < 8) & (snap["vol"] > 0)]
+            .sort_values("vol", ascending=False)
+            .head(50)
+        )
 
         if candidates.empty:
             return pd.DataFrame()
@@ -436,7 +445,7 @@ def find_tech_breakout() -> pd.DataFrame:
         breakout_stocks = []
 
         for _, row in candidates.head(30).iterrows():
-            code = row['ts_code'].split('.')[0]
+            code = row["ts_code"].split(".")[0]
             try:
                 # 获取近30日日线检查金叉
                 kline = ts.get_daily(code, limit=30)
@@ -444,26 +453,28 @@ def find_tech_breakout() -> pd.DataFrame:
                     continue
 
                 # MA5 > MA20 且前一日 MA5 < MA20 (金叉)
-                if 'MA5' in kline.columns and 'MA20' in kline.columns:
+                if "MA5" in kline.columns and "MA20" in kline.columns:
                     latest = kline.iloc[-1]
                     prev = kline.iloc[-2]
-                    ma5_now = float(latest.get('MA5', 0) or 0)
-                    ma20_now = float(latest.get('MA20', 0) or 0)
-                    ma5_prev = float(prev.get('MA5', 0) or 0)
-                    ma20_prev = float(prev.get('MA20', 0) or 0)
+                    ma5_now = float(latest.get("MA5", 0) or 0)
+                    ma20_now = float(latest.get("MA20", 0) or 0)
+                    ma5_prev = float(prev.get("MA5", 0) or 0)
+                    ma20_prev = float(prev.get("MA20", 0) or 0)
 
                     if ma5_now > ma20_now and ma5_prev <= ma20_prev:
                         # 确认放量
-                        vol_avg = kline['成交量'].tail(5).mean()
-                        vol_now = float(latest.get('成交量', 0) or 0)
+                        vol_avg = kline["成交量"].tail(5).mean()
+                        vol_now = float(latest.get("成交量", 0) or 0)
                         if vol_now > vol_avg * 1.3:
-                            breakout_stocks.append({
-                                "代码": code,
-                                "名称": name_map.get(code, code),
-                                "最新价": float(latest.get('收盘', 0) or 0),
-                                "涨跌幅": float(row.get('pct_chg', 0) or 0),
-                                "信号": f"金叉+放量{vol_now/vol_avg:.1f}x",
-                            })
+                            breakout_stocks.append(
+                                {
+                                    "代码": code,
+                                    "名称": name_map.get(code, code),
+                                    "最新价": float(latest.get("收盘", 0) or 0),
+                                    "涨跌幅": float(row.get("pct_chg", 0) or 0),
+                                    "信号": f"金叉+放量{vol_now / vol_avg:.1f}x",
+                                }
+                            )
             except Exception:
                 continue
 
@@ -471,22 +482,23 @@ def find_tech_breakout() -> pd.DataFrame:
                 break
 
         if breakout_stocks:
-            codes = [item['代码'] for item in breakout_stocks]
+            codes = [item["代码"] for item in breakout_stocks]
             from modules.data_loader import fetch_quotes_concurrent
+
             quotes = fetch_quotes_concurrent(codes)
             for item in breakout_stocks:
-                code = item['代码']
+                code = item["代码"]
                 q = quotes.get(code, {})
                 if q:
-                    item['最新价'] = q.get('price', item['最新价'])
-                    item['涨跌幅'] = q.get('change_pct', item['涨跌幅'])
+                    item["最新价"] = q.get("price", item["最新价"])
+                    item["涨跌幅"] = q.get("change_pct", item["涨跌幅"])
 
         result = pd.DataFrame(breakout_stocks)
         if not result.empty and _redis:
             _redis.set(cache_key, result, expire=600)
         return result
-    except Exception as e:
-        logger.error(f"技术突破策略失败: {e}")
+    except Exception:
+        logger.error("Technical breakout strategy failed")
         return pd.DataFrame()
 
 
@@ -504,16 +516,66 @@ _FALLBACK_CONCEPTS = [
 ]
 
 _FALLBACK_CONCEPT_STOCKS = {
-    "LOCAL_001": [("002085", "万丰奥威"), ("000099", "中信海直"), ("002249", "卧龙电驱"), ("001696", "宗申动力")],
-    "LOCAL_002": [("002050", "三花智控"), ("601689", "拓普集团"), ("603728", "鸣志电器"), ("688017", "绿的谐波")],
-    "LOCAL_003": [("601138", "工业富联"), ("300308", "中际旭创"), ("000977", "浪潮信息"), ("603019", "中科曙光")],
-    "LOCAL_004": [("300308", "中际旭创"), ("300502", "新易盛"), ("300394", "天孚通信"), ("002811", "光迅科技")],
-    "LOCAL_005": [("601985", "中国核电"), ("003816", "中国广核"), ("600875", "东方电气"), ("000922", "佳电股份")],
-    "LOCAL_006": [("688981", "中芯国际"), ("002371", "北方华创"), ("603501", "韦尔股份"), ("603986", "兆易创新")],
-    "LOCAL_007": [("600276", "恒瑞医药"), ("688235", "百济神州"), ("603259", "药明康德"), ("600196", "复星医药")],
-    "LOCAL_008": [("300750", "宁德时代"), ("002594", "比亚迪"), ("601012", "隆基绿能"), ("600438", "通威股份")],
-    "LOCAL_009": [("688027", "国盾量子"), ("000555", "神州信息"), ("002811", "光迅科技"), ("300520", "科大国创")],
-    "LOCAL_010": [("600760", "中航沈飞"), ("002179", "中航光电"), ("601989", "中国重工"), ("600893", "航发动力")],
+    "LOCAL_001": [
+        ("002085", "万丰奥威"),
+        ("000099", "中信海直"),
+        ("002249", "卧龙电驱"),
+        ("001696", "宗申动力"),
+    ],
+    "LOCAL_002": [
+        ("002050", "三花智控"),
+        ("601689", "拓普集团"),
+        ("603728", "鸣志电器"),
+        ("688017", "绿的谐波"),
+    ],
+    "LOCAL_003": [
+        ("601138", "工业富联"),
+        ("300308", "中际旭创"),
+        ("000977", "浪潮信息"),
+        ("603019", "中科曙光"),
+    ],
+    "LOCAL_004": [
+        ("300308", "中际旭创"),
+        ("300502", "新易盛"),
+        ("300394", "天孚通信"),
+        ("002811", "光迅科技"),
+    ],
+    "LOCAL_005": [
+        ("601985", "中国核电"),
+        ("003816", "中国广核"),
+        ("600875", "东方电气"),
+        ("000922", "佳电股份"),
+    ],
+    "LOCAL_006": [
+        ("688981", "中芯国际"),
+        ("002371", "北方华创"),
+        ("603501", "韦尔股份"),
+        ("603986", "兆易创新"),
+    ],
+    "LOCAL_007": [
+        ("600276", "恒瑞医药"),
+        ("688235", "百济神州"),
+        ("603259", "药明康德"),
+        ("600196", "复星医药"),
+    ],
+    "LOCAL_008": [
+        ("300750", "宁德时代"),
+        ("002594", "比亚迪"),
+        ("601012", "隆基绿能"),
+        ("600438", "通威股份"),
+    ],
+    "LOCAL_009": [
+        ("688027", "国盾量子"),
+        ("000555", "神州信息"),
+        ("002811", "光迅科技"),
+        ("300520", "科大国创"),
+    ],
+    "LOCAL_010": [
+        ("600760", "中航沈飞"),
+        ("002179", "中航光电"),
+        ("601989", "中国重工"),
+        ("600893", "航发动力"),
+    ],
 }
 
 
@@ -534,20 +596,20 @@ def find_concept_hot() -> pd.DataFrame:
             df = ts.get_concept_list()
             if df is not None and not df.empty:
                 df = df.copy()
-                df['src'] = 'tushare'
+                df["src"] = "tushare"
                 if _redis:
                     _redis.set(cache_key, df, expire=3600)
                 return df
-        except Exception as e:
-            logger.warning(f"Tushare concept list fetch failed: {e}")
+        except Exception:
+            logger.warning("Tushare concept list request failed")
 
     # Fallback to local精选概念
     df_fallback = pd.DataFrame(_FALLBACK_CONCEPTS)
-    df_fallback['src'] = 'local'
+    df_fallback["src"] = "local"
     return df_fallback
 
 
-def find_concept_stocks_detail(concept_id: str, concept_name: str = '') -> pd.DataFrame:
+def find_concept_stocks_detail(concept_id: str, concept_name: str = "") -> pd.DataFrame:
     """获取概念板块成分股 + 实时行情"""
     if str(concept_id).startswith("LOCAL_"):
         stock_tuples = _FALLBACK_CONCEPT_STOCKS.get(concept_id, [])
@@ -558,6 +620,7 @@ def find_concept_stocks_detail(concept_id: str, concept_name: str = '') -> pd.Da
         name_map = {item[0]: item[1] for item in stock_tuples}
 
         from modules.data_loader import fetch_quotes_concurrent
+
         try:
             quotes = fetch_quotes_concurrent(codes)
         except Exception:
@@ -566,13 +629,15 @@ def find_concept_stocks_detail(concept_id: str, concept_name: str = '') -> pd.Da
         rows = []
         for code in codes:
             q = quotes.get(code, {})
-            rows.append({
-                "代码": code,
-                "名称": name_map.get(code, code),
-                "最新价": q.get("price", 0),
-                "涨跌幅": q.get("change_pct", 0),
-                "板块": concept_name,
-            })
+            rows.append(
+                {
+                    "代码": code,
+                    "名称": name_map.get(code, code),
+                    "最新价": q.get("price", 0),
+                    "涨跌幅": q.get("change_pct", 0),
+                    "板块": concept_name,
+                }
+            )
         return pd.DataFrame(rows)
 
     ts = _get_ts()
@@ -590,27 +655,30 @@ def find_concept_stocks_detail(concept_id: str, concept_name: str = '') -> pd.Da
         if detail is None or detail.empty:
             return pd.DataFrame()
 
-        codes = [c.split('.')[0] for c in detail['ts_code'].tolist()[:20]]
+        codes = [c.split(".")[0] for c in detail["ts_code"].tolist()[:20]]
         name_map = ts.get_name_map()
 
         from modules.data_loader import fetch_quotes_concurrent
+
         quotes = fetch_quotes_concurrent(codes)
 
         rows = []
         for code in codes:
             q = quotes.get(code, {})
-            rows.append({
-                "代码": code,
-                "名称": name_map.get(code, code),
-                "最新价": q.get("price", 0),
-                "涨跌幅": q.get("change_pct", 0),
-                "板块": concept_name,
-            })
+            rows.append(
+                {
+                    "代码": code,
+                    "名称": name_map.get(code, code),
+                    "最新价": q.get("price", 0),
+                    "涨跌幅": q.get("change_pct", 0),
+                    "板块": concept_name,
+                }
+            )
 
         df = pd.DataFrame(rows)
         if not df.empty and _redis:
             _redis.set(cache_key, df, expire=300)
         return df
-    except Exception as e:
-        logger.error(f"概念成分股获取失败: {e}")
+    except Exception:
+        logger.error("Concept constituents request failed")
         return pd.DataFrame()

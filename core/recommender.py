@@ -2,6 +2,7 @@
 荐股引擎 v2.0 — SSM Quantum Pro
 多策略共振 × 行业赛道深度整合 × 四维评分体系
 """
+
 import logging
 from datetime import datetime
 import pandas as pd
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 SECTOR_META = {
     "robot": {
         "weight": 3.0,
-        "boom_score": 9,          # 景气度 /10
+        "boom_score": 9,  # 景气度 /10
         "thesis": "具身智能产业化元年，Optimus 零部件放量，减速器/执行器供不应求",
         "catalyst": "特斯拉 Optimus 量产时间表确认，优必选上市带动产业链重估",
     },
@@ -25,7 +26,7 @@ SECTOR_META = {
         "catalyst": "华为昇腾生态扩展，海光 DCU 政府采购订单放量",
     },
     "ai_optical": {
-        "weight": 4.0,            # 最高权重 — 当前最强硬件主线
+        "weight": 4.0,  # 最高权重 — 当前最强硬件主线
         "boom_score": 10,
         "thesis": "800G→1.6T CPO 商用元年，全球光模块龙头订单排产至 2028 年",
         "catalyst": "英伟达 GB200/GB300 大规模出货，AI 数据中心互联带宽爆发",
@@ -52,7 +53,7 @@ SECTOR_META = {
         "weight": 3.5,
         "boom_score": 9,
         "thesis": "AI 数据中心用电激增，核电基荷电源重估，在建机组全球领先",
-        "catalyst": "\"三倍核能宣言\"全球共识，国内核准机组数创历史新高",
+        "catalyst": '"三倍核能宣言"全球共识，国内核准机组数创历史新高',
     },
     "bio_drug": {
         "weight": 2.0,
@@ -70,22 +71,27 @@ SECTOR_META = {
 
 # ── 策略权重 ────────────────────────────────────────────────────
 STRATEGY_WEIGHTS = {
-    "Mainforce":  4.0,   # 主力净流入 — 最强确定性信号
-    "Northbound": 3.5,   # 北向外资定价锚
-    "Breakout":   3.0,   # 技术突破 — 量价信号
-    "Hotspot":    2.5,   # 热点赛道龙头（不含赛道额外分）
-    "Momentum":   2.0,   # 动量趋势
-    "Growth":     1.5,   # 成长活跃度
-    "Value":      1.0,   # 价值底仓
+    "Mainforce": 4.0,  # 主力净流入 — 最强确定性信号
+    "Northbound": 3.5,  # 北向外资定价锚
+    "Breakout": 3.0,  # 技术突破 — 量价信号
+    "Hotspot": 2.5,  # 热点赛道龙头（不含赛道额外分）
+    "Momentum": 2.0,  # 动量趋势
+    "Growth": 1.5,  # 成长活跃度
+    "Value": 1.0,  # 价值底仓
 }
+
 
 # ── 评级 ────────────────────────────────────────────────────────
 def _score_to_grade(score: float) -> tuple:
-    if score >= 12:  return "S",  "强烈推荐", "#f43f5e"
-    if score >= 9:   return "A+", "积极推荐", "#fb923c"
-    if score >= 6:   return "A",  "推荐关注", "#f59e0b"
-    if score >= 3.5: return "B",  "适度关注", "#10b981"
-    return                  "C",  "轻仓观察", "#64748b"
+    if score >= 12:
+        return "S", "强烈推荐", "#f43f5e"
+    if score >= 9:
+        return "A+", "积极推荐", "#fb923c"
+    if score >= 6:
+        return "A", "推荐关注", "#f59e0b"
+    if score >= 3.5:
+        return "B", "适度关注", "#10b981"
+    return "C", "轻仓观察", "#64748b"
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -101,8 +107,11 @@ def run_recommendation_engine(top_n: int = 30) -> dict:
     """
     from main import find_value_stocks, find_momentum_stocks, find_growth_stocks
     from core.strategies import (
-        find_mainforce_stocks, find_northbound_top,
-        find_tech_breakout, find_hotspot_stocks, HOTSPOT_2026
+        find_mainforce_stocks,
+        find_northbound_top,
+        find_tech_breakout,
+        find_hotspot_stocks,
+        HOTSPOT_2026,
     )
     from modules.us_transmission import calculate_us_transmission_premiums
     from modules.sentiment.sentiment_analyzer import analyze_stock_sentiment
@@ -117,13 +126,13 @@ def run_recommendation_engine(top_n: int = 30) -> dict:
         meta = SECTOR_META.get(sector_key, {})
         for code in sec_data.get("stocks", []):
             code_to_sector[code] = {
-                "sector_key":    sector_key,
-                "sector_name":   sec_data["name"],
-                "sector_color":  sec_data["color"],
+                "sector_key": sector_key,
+                "sector_name": sec_data["name"],
+                "sector_color": sec_data["color"],
                 "sector_weight": meta.get("weight", 2.0),
-                "boom_score":    meta.get("boom_score", 5),
-                "thesis":        meta.get("thesis", ""),
-                "catalyst":      meta.get("catalyst", ""),
+                "boom_score": meta.get("boom_score", 5),
+                "thesis": meta.get("thesis", ""),
+                "catalyst": meta.get("catalyst", ""),
             }
 
     # ── Step 2: 运行所有策略 ──────────────────────────────────────
@@ -131,12 +140,12 @@ def run_recommendation_engine(top_n: int = 30) -> dict:
     all_data: dict[str, dict] = {}
 
     fetchers = {
-        "Value":      find_value_stocks,
-        "Momentum":   find_momentum_stocks,
-        "Growth":     find_growth_stocks,
-        "Mainforce":  find_mainforce_stocks,
+        "Value": find_value_stocks,
+        "Momentum": find_momentum_stocks,
+        "Growth": find_growth_stocks,
+        "Mainforce": find_mainforce_stocks,
         "Northbound": find_northbound_top,
-        "Breakout":   find_tech_breakout,
+        "Breakout": find_tech_breakout,
     }
     for name, fn in fetchers.items():
         try:
@@ -148,8 +157,8 @@ def run_recommendation_engine(top_n: int = 30) -> dict:
                 code = str(row["代码"])
                 if code not in all_data:
                     all_data[code] = dict(row)
-        except Exception as e:
-            logger.warning(f"策略 {name} 失败: {e}")
+        except Exception:
+            logger.warning("Recommendation strategy failed")
 
     # 热点赛道（带板块字段）
     try:
@@ -160,8 +169,8 @@ def run_recommendation_engine(top_n: int = 30) -> dict:
                 code = str(row["代码"])
                 if code not in all_data:
                     all_data[code] = dict(row)
-    except Exception as e:
-        logger.warning(f"热点赛道失败: {e}")
+    except Exception:
+        logger.warning("Sector recommendation failed")
 
     # 确保热点赛道所有股票都被考虑（即使未被其他策略命中）
     for code in code_to_sector:
@@ -193,9 +202,9 @@ def run_recommendation_engine(top_n: int = 30) -> dict:
         elif 3 <= chg < 5:
             tech_score = 1.0
         elif chg >= 5:
-            tech_score = 0.5   # 追高风险
+            tech_score = 0.5  # 追高风险
         elif -1 < chg < 0:
-            tech_score = 0.2   # 轻微回调，正常
+            tech_score = 0.2  # 轻微回调，正常
         else:
             tech_score = 0.0
 
@@ -210,11 +219,22 @@ def run_recommendation_engine(top_n: int = 30) -> dict:
             resonance_bonus = 0.0
 
         # 维度5: 引入美股映射与全球宏观折价分 (快速计算)
-        us_premium = premiums["sectors"].get(sec_key, {}).get("score", 0.0) if sec_key else 0.0
-        global_discounts = premiums.get("risk_discount", 0.0) + premiums.get("fx_discount", 0.0)
+        us_premium = (
+            premiums["sectors"].get(sec_key, {}).get("score", 0.0) if sec_key else 0.0
+        )
+        global_discounts = premiums.get("risk_discount", 0.0) + premiums.get(
+            "fx_discount", 0.0
+        )
 
         # 第一步计算基础得分 (不含舆情情感得分)
-        base_total = strategy_score + sector_score + tech_score + resonance_bonus + us_premium + global_discounts
+        base_total = (
+            strategy_score
+            + sector_score
+            + tech_score
+            + resonance_bonus
+            + us_premium
+            + global_discounts
+        )
         base_total = max(min(base_total, 20.0), 0.0)
 
         # 粗选门槛：基础评分大于或等于 1.0 即可进入候选池
@@ -222,31 +242,37 @@ def run_recommendation_engine(top_n: int = 30) -> dict:
             continue
 
         first_pass_map[code] = {
-            "strategy_score":  round(strategy_score, 2),
-            "sector_score":    round(sector_score, 2),
-            "tech_score":      round(tech_score, 2),
+            "strategy_score": round(strategy_score, 2),
+            "sector_score": round(sector_score, 2),
+            "tech_score": round(tech_score, 2),
             "resonance_bonus": round(resonance_bonus, 2),
-            "us_premium":      round(us_premium, 2),
+            "us_premium": round(us_premium, 2),
             "global_discounts": round(global_discounts, 2),
-            "us_premium_reason": premiums["sectors"].get(sec_key, {}).get("reason", "") if sec_key else "",
-            "base_total":      base_total,
-            "hits":            hits,
+            "us_premium_reason": premiums["sectors"].get(sec_key, {}).get("reason", "")
+            if sec_key
+            else "",
+            "base_total": base_total,
+            "hits": hits,
         }
 
     # 按基础得分粗筛出前 top_n + 15 个候选，大幅缩减后续 AI 舆情请求量
     candidate_limit = top_n + 15
-    top_candidates = sorted(first_pass_map, key=lambda c: -first_pass_map[c]["base_total"])[:candidate_limit]
+    top_candidates = sorted(
+        first_pass_map, key=lambda c: -first_pass_map[c]["base_total"]
+    )[:candidate_limit]
 
     # ── Step 3.5: 第二轮精选评分 (仅针对前 N 候选调用 AI 舆情情感分析) ────────────────
     score_map: dict[str, dict] = {}
     for code in top_candidates:
         row = all_data.get(code, {})
         sc = first_pass_map[code]
-        
+
         # 精细化运行舆情情感深度分析与爆雷风控一票否决
         sentiment = analyze_stock_sentiment(code, row.get("名称", code))
         if sentiment.get("is_circuit_break", False):
-            logger.warning(f"⚠️ 风控阻断: 股票 {row.get('名称', code)} ({code}) 触发一票否决风险事件: {sentiment.get('reason')}")
+            logger.warning(
+                f"⚠️ 风控阻断: 股票 {row.get('名称', code)} ({code}) 触发一票否决风险事件: {sentiment.get('reason')}"
+            )
             continue
 
         sentiment_score = sentiment.get("sentiment_score", 0.0)
@@ -255,47 +281,55 @@ def run_recommendation_engine(top_n: int = 30) -> dict:
 
         # 运行高级买卖点与自适应风控建议计算
         try:
-            full_symbol = "sh" + code if code.startswith('6') else "sz" + code
+            full_symbol = "sh" + code if code.startswith("6") else "sz" + code
             from modules.data_loader import calculate_advanced_trading_signals
+
             exec_signals = calculate_advanced_trading_signals(full_symbol)
-        except Exception as e:
-            logger.error(f"Failed to calculate advanced signals for {code}: {e}")
+        except Exception:
+            logger.error("Advanced signal calculation failed")
             exec_signals = {
-                "signal": "计算异常", "buy_zone": "—", "stop_loss": "—", "take_profit": "—"
+                "signal": "计算异常",
+                "buy_zone": "—",
+                "stop_loss": "—",
+                "take_profit": "—",
             }
 
         score_map[code] = {
-            "strategy_score":  sc["strategy_score"],
-            "sector_score":    sc["sector_score"],
-            "tech_score":      sc["tech_score"],
+            "strategy_score": sc["strategy_score"],
+            "sector_score": sc["sector_score"],
+            "tech_score": sc["tech_score"],
             "resonance_bonus": sc["resonance_bonus"],
             "sentiment_score": round(sentiment_score, 2),
-            "us_premium":      sc["us_premium"],
+            "us_premium": sc["us_premium"],
             "global_discounts": sc["global_discounts"],
             "sentiment_label": sentiment.get("sentiment_label", "中性"),
             "sentiment_reason": sentiment.get("reason", ""),
             "us_premium_reason": sc["us_premium_reason"],
-            "exec_signal":      exec_signals.get("signal", "观望"),
-            "exec_buy_zone":    exec_signals.get("buy_zone", "—"),
-            "exec_stop_loss":   exec_signals.get("stop_loss", "—"),
+            "exec_signal": exec_signals.get("signal", "观望"),
+            "exec_buy_zone": exec_signals.get("buy_zone", "—"),
+            "exec_stop_loss": exec_signals.get("stop_loss", "—"),
             "exec_take_profit": exec_signals.get("take_profit", "—"),
-            "total":           round(total, 2),
-            "hits":            sc["hits"],
+            "total": round(total, 2),
+            "hits": sc["hits"],
         }
 
     # ── Step 4: 组装个股 DataFrame ───────────────────────────────
     STRAT_ZH = {
-        "Value":      "💎价值", "Momentum": "🔥动量", "Growth": "🌟成长",
-        "Mainforce":  "💰主力", "Northbound": "🔗北向",
-        "Breakout":   "📈突破", "Hotspot": "🏭赛道",
+        "Value": "💎价值",
+        "Momentum": "🔥动量",
+        "Growth": "🌟成长",
+        "Mainforce": "💰主力",
+        "Northbound": "🔗北向",
+        "Breakout": "📈突破",
+        "Hotspot": "🏭赛道",
     }
 
     sorted_codes = sorted(score_map, key=lambda c: -score_map[c]["total"])[:top_n]
     rows = []
     for rank, code in enumerate(sorted_codes, 1):
-        sc   = score_map[code]
-        row  = all_data.get(code, {})
-        sec  = code_to_sector.get(code, {})
+        sc = score_map[code]
+        row = all_data.get(code, {})
+        sec = code_to_sector.get(code, {})
         hits = sc["hits"]
         grade, glabel, gcolor = _score_to_grade(sc["total"])
 
@@ -327,41 +361,43 @@ def run_recommendation_engine(top_n: int = 30) -> dict:
         else:
             action = "⚪ 持续观察"
 
-        rows.append({
-            "排名":     rank,
-            "代码":     code,
-            "名称":     row.get("名称", code),
-            "最新价":   float(row.get("最新价", 0) or 0),
-            "涨跌幅":   float(row.get("涨跌幅", 0) or 0),
-            "总评分":   sc["total"],
-            "策略分":   sc["strategy_score"],
-            "赛道分":   sc["sector_score"],
-            "技术分":   sc["tech_score"],
-            "共振加成": sc["resonance_bonus"],
-            "舆情分":   sc["sentiment_score"],
-            "美股溢价": sc["us_premium"],
-            "全球折价": sc["global_discounts"],
-            "舆情标签": sc["sentiment_label"],
-            "舆情理由": sc["sentiment_reason"],
-            "美股理由": sc["us_premium_reason"],
-            "交易信号":   sc["exec_signal"],
-            "买入区间":   sc["exec_buy_zone"],
-            "止损点":     sc["exec_stop_loss"],
-            "止盈点":     sc["exec_take_profit"],
-            "评级":     grade,
-            "评级标签": glabel,
-            "评级色":   gcolor,
-            "命中策略": " ".join(STRAT_ZH.get(h, h) for h in hits),
-            "命中数":   len(hits),
-            "操作建议": action,
-            "赛道键":   sec.get("sector_key", ""),
-            "赛道名":   sec.get("sector_name", "—"),
-            "赛道色":   sec.get("sector_color", "#64748b"),
-            "景气度":   sec.get("boom_score", 0),
-            "赛道逻辑": sec.get("thesis", ""),
-            "催化剂":   sec.get("catalyst", ""),
-            "荐股理由": " · ".join(reasons[:4]) if reasons else "多策略共振",
-        })
+        rows.append(
+            {
+                "排名": rank,
+                "代码": code,
+                "名称": row.get("名称", code),
+                "最新价": float(row.get("最新价", 0) or 0),
+                "涨跌幅": float(row.get("涨跌幅", 0) or 0),
+                "总评分": sc["total"],
+                "策略分": sc["strategy_score"],
+                "赛道分": sc["sector_score"],
+                "技术分": sc["tech_score"],
+                "共振加成": sc["resonance_bonus"],
+                "舆情分": sc["sentiment_score"],
+                "美股溢价": sc["us_premium"],
+                "全球折价": sc["global_discounts"],
+                "舆情标签": sc["sentiment_label"],
+                "舆情理由": sc["sentiment_reason"],
+                "美股理由": sc["us_premium_reason"],
+                "交易信号": sc["exec_signal"],
+                "买入区间": sc["exec_buy_zone"],
+                "止损点": sc["exec_stop_loss"],
+                "止盈点": sc["exec_take_profit"],
+                "评级": grade,
+                "评级标签": glabel,
+                "评级色": gcolor,
+                "命中策略": " ".join(STRAT_ZH.get(h, h) for h in hits),
+                "命中数": len(hits),
+                "操作建议": action,
+                "赛道键": sec.get("sector_key", ""),
+                "赛道名": sec.get("sector_name", "—"),
+                "赛道色": sec.get("sector_color", "#64748b"),
+                "景气度": sec.get("boom_score", 0),
+                "赛道逻辑": sec.get("thesis", ""),
+                "催化剂": sec.get("catalyst", ""),
+                "荐股理由": " · ".join(reasons[:4]) if reasons else "多策略共振",
+            }
+        )
 
     stocks_df = pd.DataFrame(rows)
 
@@ -372,54 +408,59 @@ def run_recommendation_engine(top_n: int = 30) -> dict:
         pool = set(sec_data.get("stocks", []))
         recommended = [c for c in sorted_codes if c in pool]
         hit_by_strategy = sum(
-            1 for c in pool
-            if any(c in codes for codes in strategy_results.values())
+            1 for c in pool if any(c in codes for codes in strategy_results.values())
         )
         avg_score = (
             sum(score_map[c]["total"] for c in recommended) / len(recommended)
-            if recommended else 0
+            if recommended
+            else 0
         )
-        
+
         # 融入实时美股传导景气修正分
         base_boom = meta.get("boom_score", 5)
         us_gain = premiums["sectors"].get(sector_key, {}).get("score", 0.0)
         dynamic_boom = max(min(base_boom + us_gain * 0.8, 10.0), 0.0)
-        
-        sector_stats.append({
-            "sector_key":  sector_key,
-            "sector_name": sec_data["name"],
-            "color":       sec_data["color"],
-            "boom_score":  round(dynamic_boom, 1),
-            "weight":      meta.get("weight", 2.0),
-            "thesis":      meta.get("thesis", ""),
-            "catalyst":    meta.get("catalyst", ""),
-            "total_stocks":    len(pool),
-            "recommended_cnt": len(recommended),
-            "strategy_hits":   hit_by_strategy,
-            "avg_score":       round(avg_score, 2),
-            "热度指数":        round(dynamic_boom * meta.get("weight", 2.0) / 10.0 * 10, 1),
-        })
+
+        sector_stats.append(
+            {
+                "sector_key": sector_key,
+                "sector_name": sec_data["name"],
+                "color": sec_data["color"],
+                "boom_score": round(dynamic_boom, 1),
+                "weight": meta.get("weight", 2.0),
+                "thesis": meta.get("thesis", ""),
+                "catalyst": meta.get("catalyst", ""),
+                "total_stocks": len(pool),
+                "recommended_cnt": len(recommended),
+                "strategy_hits": hit_by_strategy,
+                "avg_score": round(avg_score, 2),
+                "热度指数": round(
+                    dynamic_boom * meta.get("weight", 2.0) / 10.0 * 10, 1
+                ),
+            }
+        )
     sectors_df = pd.DataFrame(sector_stats).sort_values("热度指数", ascending=False)
 
     # ── Step 6: 市场摘要 ─────────────────────────────────────────
     strategies_active = len(strategy_results)
     total_candidates = len(all_codes)
-    grade_s_cnt  = len([r for r in rows if r["评级"] == "S"])
+    grade_s_cnt = len([r for r in rows if r["评级"] == "S"])
     grade_ap_cnt = len([r for r in rows if r["评级"] == "A+"])
-    top_sector   = sectors_df.iloc[0]["sector_name"] if not sectors_df.empty else "—"
-    top_sector_boom = int(sectors_df.iloc[0]["boom_score"]) if not sectors_df.empty else 0
+    top_sector = sectors_df.iloc[0]["sector_name"] if not sectors_df.empty else "—"
+    top_sector_boom = (
+        int(sectors_df.iloc[0]["boom_score"]) if not sectors_df.empty else 0
+    )
 
     summary = {
-        "strategies_active":  strategies_active,
-        "total_candidates":   total_candidates,
-        "recommended_cnt":    len(rows),
-        "grade_s_cnt":        grade_s_cnt,
-        "grade_ap_cnt":       grade_ap_cnt,
-        "top_sector":         top_sector,
-        "top_sector_boom":    top_sector_boom,
-        "generated_at":       datetime.now().strftime("%H:%M:%S"),
-        "global_premiums":    premiums
+        "strategies_active": strategies_active,
+        "total_candidates": total_candidates,
+        "recommended_cnt": len(rows),
+        "grade_s_cnt": grade_s_cnt,
+        "grade_ap_cnt": grade_ap_cnt,
+        "top_sector": top_sector,
+        "top_sector_boom": top_sector_boom,
+        "generated_at": datetime.now().strftime("%H:%M:%S"),
+        "global_premiums": premiums,
     }
 
     return {"stocks": stocks_df, "sectors": sectors_df, "summary": summary}
-

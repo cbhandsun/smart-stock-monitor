@@ -1,14 +1,16 @@
 import pandas as pd
 import numpy as np
-from typing import Dict, List
+from typing import Dict
 import warnings
-warnings.filterwarnings('ignore')
+
+warnings.filterwarnings("ignore")
 
 try:
     from sklearn.linear_model import LinearRegression
     from sklearn.preprocessing import PolynomialFeatures
     from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
     from sklearn.metrics import mean_squared_error
+
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False
@@ -17,6 +19,7 @@ except ImportError:
     RandomForestRegressor = None
     GradientBoostingRegressor = None
     mean_squared_error = None
+
 
 class PredictiveAnalyzer:
     """预测分析模块 — V2.0 (特征工程 + 集成模型)"""
@@ -64,10 +67,14 @@ class PredictiveAnalyzer:
         feats[:, 6] = pd.Series(ret).rolling(5, min_periods=1).std().values
 
         # 5日动量 (change %)
-        feats[5:, 7] = (prices[5:] - prices[:-5]) / np.where(prices[:-5] > 0, prices[:-5], 1e-8)
+        feats[5:, 7] = (prices[5:] - prices[:-5]) / np.where(
+            prices[:-5] > 0, prices[:-5], 1e-8
+        )
 
         # 20日动量
-        feats[20:, 8] = (prices[20:] - prices[:-20]) / np.where(prices[:-20] > 0, prices[:-20], 1e-8)
+        feats[20:, 8] = (prices[20:] - prices[:-20]) / np.where(
+            prices[:-20] > 0, prices[:-20], 1e-8
+        )
 
         # 量比 (volume / MA5_volume)
         if volumes is not None and len(volumes) == n:
@@ -85,7 +92,9 @@ class PredictiveAnalyzer:
         """简单线性预测（无需sklearn）"""
         n = len(prices)
         x = np.arange(n)
-        slope = (n * np.sum(x * prices) - np.sum(x) * np.sum(prices)) / (n * np.sum(x**2) - np.sum(x)**2)
+        slope = (n * np.sum(x * prices) - np.sum(x) * np.sum(prices)) / (
+            n * np.sum(x**2) - np.sum(x) ** 2
+        )
         intercept = (np.sum(prices) - slope * np.sum(x)) / n
         future_x = np.arange(n, n + days)
         return slope * future_x + intercept
@@ -93,7 +102,9 @@ class PredictiveAnalyzer:
     # ==================================================================
     # 核心预测方法
     # ==================================================================
-    def trend_prediction(self, df: pd.DataFrame, days: int = 5, method: str = 'linear') -> Dict:
+    def trend_prediction(
+        self, df: pd.DataFrame, days: int = 5, method: str = "linear"
+    ) -> Dict:
         """
         趋势预测 — V2.0
 
@@ -105,29 +116,33 @@ class PredictiveAnalyzer:
         """
         if df.empty or len(df) < 30:
             return {
-                'predictions': [],
-                'trend': 'unknown',
-                'confidence': 0.0,
-                'error': '数据不足'
+                "predictions": [],
+                "trend": "unknown",
+                "confidence": 0.0,
+                "error": "数据不足",
             }
 
         try:
-            close_col = 'close' if 'close' in df.columns else '收盘'
-            vol_col = 'volume' if 'volume' in df.columns else '成交量'
+            close_col = "close" if "close" in df.columns else "收盘"
+            vol_col = "volume" if "volume" in df.columns else "成交量"
             prices = df[close_col].astype(float).values
-            volumes = df[vol_col].astype(float).values if vol_col in df.columns else None
+            volumes = (
+                df[vol_col].astype(float).values if vol_col in df.columns else None
+            )
 
             if not SKLEARN_AVAILABLE:
                 predictions = self._simple_linear_predict(prices, days)
-                trend = 'up' if predictions[-1] > prices[-1] else 'down'
+                trend = "up" if predictions[-1] > prices[-1] else "down"
                 return {
-                    'predictions': predictions.tolist(),
-                    'current_price': float(prices[-1]),
-                    'predicted_price': float(predictions[-1]),
-                    'expected_change': float((predictions[-1] - prices[-1]) / prices[-1] * 100),
-                    'trend': trend,
-                    'confidence': 50.0,
-                    'method': 'simple_linear'
+                    "predictions": predictions.tolist(),
+                    "current_price": float(prices[-1]),
+                    "predicted_price": float(predictions[-1]),
+                    "expected_change": float(
+                        (predictions[-1] - prices[-1]) / prices[-1] * 100
+                    ),
+                    "trend": trend,
+                    "confidence": 50.0,
+                    "method": "simple_linear",
                 }
 
             # ---- 特征构建 ----
@@ -135,7 +150,9 @@ class PredictiveAnalyzer:
 
             # 目标: 未来 1 日收益率
             target = np.zeros(len(prices))
-            target[:-1] = (prices[1:] - prices[:-1]) / np.where(prices[:-1] > 0, prices[:-1], 1e-8)
+            target[:-1] = (prices[1:] - prices[:-1]) / np.where(
+                prices[:-1] > 0, prices[:-1], 1e-8
+            )
 
             # 训练集 (去掉前60天warm-up和最后1天target缺失)
             warmup = 60
@@ -145,31 +162,41 @@ class PredictiveAnalyzer:
             if len(X_train) < 20:
                 predictions = self._simple_linear_predict(prices, days)
                 return {
-                    'predictions': predictions.tolist(),
-                    'current_price': float(prices[-1]),
-                    'predicted_price': float(predictions[-1]),
-                    'expected_change': float((predictions[-1] - prices[-1]) / prices[-1] * 100),
-                    'trend': 'up' if predictions[-1] > prices[-1] else 'down',
-                    'confidence': 40.0,
-                    'method': method
+                    "predictions": predictions.tolist(),
+                    "current_price": float(prices[-1]),
+                    "predicted_price": float(predictions[-1]),
+                    "expected_change": float(
+                        (predictions[-1] - prices[-1]) / prices[-1] * 100
+                    ),
+                    "trend": "up" if predictions[-1] > prices[-1] else "down",
+                    "confidence": 40.0,
+                    "method": method,
                 }
 
             # ---- 选择模型 ----
-            if method == 'poly':
-                poly = PolynomialFeatures(degree=2, interaction_only=True, include_bias=False)
+            if method == "poly":
+                poly = PolynomialFeatures(
+                    degree=2, interaction_only=True, include_bias=False
+                )
                 X_poly = poly.fit_transform(X_train)
                 model = LinearRegression()
                 model.fit(X_poly, y_train)
-            elif method == 'rf':
+            elif method == "rf":
                 model = RandomForestRegressor(
-                    n_estimators=200, max_depth=6,
-                    min_samples_leaf=5, random_state=42, n_jobs=-1
+                    n_estimators=200,
+                    max_depth=6,
+                    min_samples_leaf=5,
+                    random_state=42,
+                    n_jobs=-1,
                 )
                 model.fit(X_train, y_train)
-            elif method == 'gbdt':
+            elif method == "gbdt":
                 model = GradientBoostingRegressor(
-                    n_estimators=150, max_depth=4,
-                    learning_rate=0.05, subsample=0.8, random_state=42
+                    n_estimators=150,
+                    max_depth=4,
+                    learning_rate=0.05,
+                    subsample=0.8,
+                    random_state=42,
                 )
                 model.fit(X_train, y_train)
             else:  # linear
@@ -183,11 +210,13 @@ class PredictiveAnalyzer:
 
             for _ in range(days):
                 arr_p = np.array(current_prices)
-                arr_v = np.array(current_volumes) if current_volumes is not None else None
+                arr_v = (
+                    np.array(current_volumes) if current_volumes is not None else None
+                )
                 feat = self._build_features(arr_p, arr_v)
                 latest_feat = feat[-1:, :]
 
-                if method == 'poly':
+                if method == "poly":
                     latest_feat = poly.transform(latest_feat)
 
                 pred_return = model.predict(latest_feat)[0]
@@ -213,22 +242,32 @@ class PredictiveAnalyzer:
                 y_val = y_train[split:]
 
                 # 用前80%数据单独训练一个评估模型
-                if method == 'poly':
-                    poly_eval = PolynomialFeatures(degree=2, interaction_only=True, include_bias=False)
+                if method == "poly":
+                    poly_eval = PolynomialFeatures(
+                        degree=2, interaction_only=True, include_bias=False
+                    )
                     X_tr_eval_t = poly_eval.fit_transform(X_tr_eval)
                     eval_model = LinearRegression()
                     eval_model.fit(X_tr_eval_t, y_tr_eval)
                     X_val_t = poly_eval.transform(X_val)
-                elif method == 'rf':
+                elif method == "rf":
                     eval_model = RandomForestRegressor(
-                        n_estimators=200, max_depth=6,
-                        min_samples_leaf=5, random_state=42, n_jobs=-1)
+                        n_estimators=200,
+                        max_depth=6,
+                        min_samples_leaf=5,
+                        random_state=42,
+                        n_jobs=-1,
+                    )
                     eval_model.fit(X_tr_eval, y_tr_eval)
                     X_val_t = X_val
-                elif method == 'gbdt':
+                elif method == "gbdt":
                     eval_model = GradientBoostingRegressor(
-                        n_estimators=150, max_depth=4,
-                        learning_rate=0.05, subsample=0.8, random_state=42)
+                        n_estimators=150,
+                        max_depth=4,
+                        learning_rate=0.05,
+                        subsample=0.8,
+                        random_state=42,
+                    )
                     eval_model.fit(X_tr_eval, y_tr_eval)
                     X_val_t = X_val
                 else:
@@ -241,11 +280,13 @@ class PredictiveAnalyzer:
                 # 过滤掉 y_val ≈ 0 的样本 (涨跌幅 < 0.1% 视为噪声)
                 mask = np.abs(y_val) > 0.001
                 if mask.sum() > 5:
-                    direction_correct = float(np.mean(
-                        np.sign(y_pred_val[mask]) == np.sign(y_val[mask])))
+                    direction_correct = float(
+                        np.mean(np.sign(y_pred_val[mask]) == np.sign(y_val[mask]))
+                    )
                 else:
-                    direction_correct = float(np.mean(
-                        np.sign(y_pred_val) == np.sign(y_val)))
+                    direction_correct = float(
+                        np.mean(np.sign(y_pred_val) == np.sign(y_val))
+                    )
 
                 # 相关系数
                 if np.std(y_val) > 0 and np.std(y_pred_val) > 0:
@@ -261,38 +302,36 @@ class PredictiveAnalyzer:
             confidence = min((direction_correct * 0.6 + corr * 0.4) * 100, 85)
             confidence = max(confidence, 25)  # 下限 25%
 
-            trend = 'up' if predictions[-1] > prices[-1] else 'down'
+            trend = "up" if predictions[-1] > prices[-1] else "down"
 
             return {
-                'predictions': predictions,
-                'current_price': float(prices[-1]),
-                'predicted_price': float(predictions[-1]),
-                'expected_change': float((predictions[-1] - prices[-1]) / prices[-1] * 100),
-                'trend': trend,
-                'confidence': round(confidence, 1),
-                'method': method,
-                'direction_accuracy': round(direction_correct * 100, 1),
+                "predictions": predictions,
+                "current_price": float(prices[-1]),
+                "predicted_price": float(predictions[-1]),
+                "expected_change": float(
+                    (predictions[-1] - prices[-1]) / prices[-1] * 100
+                ),
+                "trend": trend,
+                "confidence": round(confidence, 1),
+                "method": method,
+                "direction_accuracy": round(direction_correct * 100, 1),
             }
 
         except Exception as e:
             return {
-                'predictions': [],
-                'trend': 'unknown',
-                'confidence': 0.0,
-                'error': str(e)
+                "predictions": [],
+                "trend": "unknown",
+                "confidence": 0.0,
+                "error": str(e),
             }
 
     def risk_assessment(self, df: pd.DataFrame) -> Dict:
         """风险评估"""
         if df.empty or len(df) < 20:
-            return {
-                'risk_level': 'unknown',
-                'risk_score': 0,
-                'error': '数据不足'
-            }
+            return {"risk_level": "unknown", "risk_score": 0, "error": "数据不足"}
 
         try:
-            close_col = 'close' if 'close' in df.columns else '收盘'
+            close_col = "close" if "close" in df.columns else "收盘"
             prices = df[close_col]
 
             returns = prices.pct_change().dropna()
@@ -301,7 +340,11 @@ class PredictiveAnalyzer:
             drawdown = (prices - cummax) / cummax
             max_drawdown = drawdown.min() * 100
             downside_returns = returns[returns < 0]
-            downside_risk = downside_returns.std() * np.sqrt(252) * 100 if len(downside_returns) > 0 else 0
+            downside_risk = (
+                downside_returns.std() * np.sqrt(252) * 100
+                if len(downside_returns) > 0
+                else 0
+            )
             var_95 = np.percentile(returns, 5) * 100
 
             risk_score = 0
@@ -328,37 +371,33 @@ class PredictiveAnalyzer:
                 risk_score += 15
 
             if risk_score >= 70:
-                risk_level = 'High'
+                risk_level = "High"
             elif risk_score >= 40:
-                risk_level = 'Medium'
+                risk_level = "Medium"
             else:
-                risk_level = 'Low'
+                risk_level = "Low"
 
             return {
-                'volatility': round(volatility, 2),
-                'max_drawdown': round(max_drawdown, 2),
-                'downside_risk': round(downside_risk, 2),
-                'var_95': round(var_95, 2),
-                'risk_score': risk_score,
-                'risk_level': risk_level
+                "volatility": round(volatility, 2),
+                "max_drawdown": round(max_drawdown, 2),
+                "downside_risk": round(downside_risk, 2),
+                "var_95": round(var_95, 2),
+                "risk_score": risk_score,
+                "risk_level": risk_level,
             }
 
         except Exception as e:
-            return {
-                'risk_level': 'unknown',
-                'risk_score': 0,
-                'error': str(e)
-            }
+            return {"risk_level": "unknown", "risk_score": 0, "error": str(e)}
 
     def support_resistance(self, df: pd.DataFrame, window: int = 20) -> Dict:
         """计算支撑阻力位"""
         if df.empty or len(df) < window:
-            return {'error': '数据不足'}
+            return {"error": "数据不足"}
 
         try:
-            high_col = 'high' if 'high' in df.columns else '最高'
-            low_col = 'low' if 'low' in df.columns else '最低'
-            close_col = 'close' if 'close' in df.columns else '收盘'
+            high_col = "high" if "high" in df.columns else "最高"
+            low_col = "low" if "low" in df.columns else "最低"
+            close_col = "close" if "close" in df.columns else "收盘"
 
             recent_data = df.tail(window)
             recent_highs = recent_data[high_col].nlargest(3).values
@@ -374,31 +413,43 @@ class PredictiveAnalyzer:
             fib_618 = resistance - price_range * 0.618
 
             return {
-                'current_price': round(current_price, 2),
-                'resistance': round(resistance, 2),
-                'support': round(support, 2),
-                'fib_382': round(fib_382, 2),
-                'fib_500': round(fib_500, 2),
-                'fib_618': round(fib_618, 2),
-                'position': 'above_support' if current_price > support else 'below_support'
+                "current_price": round(current_price, 2),
+                "resistance": round(resistance, 2),
+                "support": round(support, 2),
+                "fib_382": round(fib_382, 2),
+                "fib_500": round(fib_500, 2),
+                "fib_618": round(fib_618, 2),
+                "position": "above_support"
+                if current_price > support
+                else "below_support",
             }
 
         except Exception as e:
-            return {'error': str(e)}
+            return {"error": str(e)}
 
     def momentum_analysis(self, df: pd.DataFrame) -> Dict:
         """动量分析"""
         if df.empty or len(df) < 60:
-            return {'error': '数据不足'}
+            return {"error": "数据不足"}
 
         try:
-            close_col = 'close' if 'close' in df.columns else '收盘'
+            close_col = "close" if "close" in df.columns else "收盘"
             prices = df[close_col]
 
             returns_1d = (prices.iloc[-1] / prices.iloc[-2] - 1) * 100
-            returns_5d = (prices.iloc[-1] / prices.iloc[-6] - 1) * 100 if len(prices) >= 6 else 0
-            returns_20d = (prices.iloc[-1] / prices.iloc[-21] - 1) * 100 if len(prices) >= 21 else 0
-            returns_60d = (prices.iloc[-1] / prices.iloc[-61] - 1) * 100 if len(prices) >= 61 else 0
+            returns_5d = (
+                (prices.iloc[-1] / prices.iloc[-6] - 1) * 100 if len(prices) >= 6 else 0
+            )
+            returns_20d = (
+                (prices.iloc[-1] / prices.iloc[-21] - 1) * 100
+                if len(prices) >= 21
+                else 0
+            )
+            returns_60d = (
+                (prices.iloc[-1] / prices.iloc[-61] - 1) * 100
+                if len(prices) >= 61
+                else 0
+            )
 
             momentum_score = 0
             if returns_1d > 0:
@@ -411,44 +462,46 @@ class PredictiveAnalyzer:
                 momentum_score += 40
 
             if momentum_score >= 70:
-                momentum_direction = 'Strong Bullish'
+                momentum_direction = "Strong Bullish"
             elif momentum_score >= 50:
-                momentum_direction = 'Bullish'
+                momentum_direction = "Bullish"
             elif momentum_score >= 30:
-                momentum_direction = 'Neutral'
+                momentum_direction = "Neutral"
             elif momentum_score >= 10:
-                momentum_direction = 'Bearish'
+                momentum_direction = "Bearish"
             else:
-                momentum_direction = 'Strong Bearish'
+                momentum_direction = "Strong Bearish"
 
             return {
-                'returns_1d': round(returns_1d, 2),
-                'returns_5d': round(returns_5d, 2),
-                'returns_20d': round(returns_20d, 2),
-                'returns_60d': round(returns_60d, 2),
-                'momentum_score': momentum_score,
-                'momentum_direction': momentum_direction
+                "returns_1d": round(returns_1d, 2),
+                "returns_5d": round(returns_5d, 2),
+                "returns_20d": round(returns_20d, 2),
+                "returns_60d": round(returns_60d, 2),
+                "momentum_score": momentum_score,
+                "momentum_direction": momentum_direction,
             }
 
         except Exception as e:
-            return {'error': str(e)}
+            return {"error": str(e)}
 
-    def predict_price_range(self, df: pd.DataFrame, days: int = 5, confidence: float = 0.95) -> Dict:
+    def predict_price_range(
+        self, df: pd.DataFrame, days: int = 5, confidence: float = 0.95
+    ) -> Dict:
         """预测价格区间"""
         if df.empty or len(df) < 30:
-            return {'error': '数据不足'}
+            return {"error": "数据不足"}
 
         try:
-            close_col = 'close' if 'close' in df.columns else '收盘'
+            close_col = "close" if "close" in df.columns else "收盘"
             prices = df[close_col].values
 
             returns = np.diff(prices) / prices[:-1]
             volatility = np.std(returns)
 
             # 使用特征工程预测中心价
-            result = self.trend_prediction(df, days, method='rf')
-            if result.get('predictions'):
-                predicted_price = result['predicted_price']
+            result = self.trend_prediction(df, days, method="rf")
+            if result.get("predictions"):
+                predicted_price = result["predicted_price"]
             else:
                 X = np.arange(len(prices)).reshape(-1, 1)
                 model = LinearRegression()
@@ -460,12 +513,12 @@ class PredictiveAnalyzer:
             margin = z_score * volatility * np.sqrt(days) * predicted_price
 
             return {
-                'predicted_price': round(float(predicted_price), 2),
-                'lower_bound': round(max(float(predicted_price - margin), 0), 2),
-                'upper_bound': round(float(predicted_price + margin), 2),
-                'confidence': confidence * 100,
-                'days': days
+                "predicted_price": round(float(predicted_price), 2),
+                "lower_bound": round(max(float(predicted_price - margin), 0), 2),
+                "upper_bound": round(float(predicted_price + margin), 2),
+                "confidence": confidence * 100,
+                "days": days,
             }
 
         except Exception as e:
-            return {'error': str(e)}
+            return {"error": str(e)}

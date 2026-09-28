@@ -1,35 +1,39 @@
 import streamlit as st
 from datetime import datetime
+from html import escape
+import os
+
+from core.routing import parse_symbol
 
 
 # ── 导航分组定义 ────────────────────────────────────────────────
 _CORE_NAV = [
-    ("📡 实时看盘", "market",    "信号 · 赛道 · 策略"),
-    ("🎯 AI荐股",  "recommend", "多策略共振 · 综合推荐"),
-    ("🧬 深度研究", "research",  "DNA · 估值 · 财报"),
+    ("📡 实时看盘", "market", "信号 · 赛道 · 策略"),
+    ("🎯 AI荐股", "recommend", "多策略共振 · 综合推荐"),
+    ("🧬 深度研究", "research", "DNA · 估值 · 财报"),
     ("💼 资产管理", "portfolio", "持仓 · 收益 · 回测"),
 ]
 
 _AI_NAV = [
-    ("📡 信号追踪", "ai_tracker",          "实时 AI 信号流"),
-    ("💬 AI策略师", "ai_chat",             "对话式量化顾问"),
-    ("💡 投顾建议", "investment_advisor",  "组合优化建议"),
-    ("🎭 情绪雷达", "sentiment",           "市场情绪分析"),
+    ("📡 信号追踪", "ai_tracker", "实时 AI 信号流"),
+    ("💬 AI策略师", "ai_chat", "对话式量化顾问"),
+    ("💡 投顾建议", "investment_advisor", "组合优化建议"),
+    ("🎭 情绪雷达", "sentiment", "市场情绪分析"),
 ]
 
 _LAB_NAV = [
-    ("📊 宏观雷达", "macro",             "经济指标监控"),
-    ("🔍 异动监测", "anomaly",           "异常成交探测"),
-    ("🔬 预测中心", "predict",           "AI 价格预测"),
-    ("🛠️ 技术回测", "backtest",          "策略历史验证"),
+    ("📊 宏观雷达", "macro", "经济指标监控"),
+    ("🔍 异动监测", "anomaly", "异常成交探测"),
+    ("🔬 预测中心", "predict", "AI 价格预测"),
+    ("🛠️ 技术回测", "backtest", "策略历史验证"),
     ("🧪 研究员台", "research_analyzer", "深度研究分析"),
 ]
 
 _OPS_NAV = [
-    ("🔌 数据管理",    "data_manager", "数据源配置"),
-    ("🩺 数据健康",    "data_health",  "连接 & 新鲜度"),
-    ("🔔 预警中心",    "alerts",       "多渠道告警"),
-    ("⚙️ 系统设置",    "settings",     "参数配置"),
+    ("🔌 数据管理", "data_manager", "数据源配置"),
+    ("🩺 数据健康", "data_health", "连接 & 新鲜度"),
+    ("🔔 预警中心", "alerts", "多渠道告警"),
+    ("⚙️ 系统设置", "settings", "参数配置"),
 ]
 
 _SIDEBAR_STYLE = ""
@@ -75,6 +79,7 @@ def render_sidebar(L, name_map, new_modules_available=True):
         # ── 用户菜单 ──────────────────────────────────────────
         try:
             from pages._login import render_user_menu
+
             render_user_menu()
             st.divider()
         except ImportError:
@@ -106,14 +111,16 @@ def render_sidebar(L, name_map, new_modules_available=True):
         # ── 快捷标的入口 ──────────────────────────────────────
         try:
             from components.ui_components import stock_context_bar
+
             stock_context_bar(name_map)
         except Exception:
             pass
 
         # 首次初始化：默认代码 601933（只设一次，不覆盖用户输入）
-        if 'ssm_quick_code_input' not in st.session_state:
-            st.session_state['ssm_quick_code_input'] = \
-                st.session_state.get('selected_stock', '601933')
+        if "ssm_quick_code_input" not in st.session_state:
+            st.session_state["ssm_quick_code_input"] = st.session_state.get(
+                "selected_stock", "601933"
+            )
 
         quick_code = st.text_input(
             "快捷分析",
@@ -126,22 +133,28 @@ def render_sidebar(L, name_map, new_modules_available=True):
             use_container_width=True,
             type="primary",
         ):
-            code = quick_code.strip() if quick_code and quick_code.strip() else '601933'
-            st.session_state['selected_stock'] = code
-            st.session_state['current_page'] = 'market'
-            st.session_state['market_view'] = '📊 深度分析'
+            raw_code = (
+                quick_code.strip() if quick_code and quick_code.strip() else "601933"
+            )
+            code = parse_symbol(raw_code)
+            if code != raw_code:
+                st.error("股票代码必须是6位数字")
+                st.stop()
+            st.session_state["selected_stock"] = code
+            st.session_state["current_page"] = "market"
+            st.session_state["market_view"] = "📊 深度分析"
             st.rerun()
-
 
         # ── 自选计数 + 页脚 ───────────────────────────────────
         wl = L.get("watchlist", []) if isinstance(L, dict) else []
         wl_count = len(wl) if wl else 0
+        app_version = escape(os.getenv("APP_VERSION", "dev")[:40], quote=True)
 
         st.html(
             f'<div class="ssm-footer">'
             f'<div class="ssm-footer-inner">'
-            f'<span class="ssm-version">v8.0</span>'
-            f'&nbsp;SSM Quantum Pro<br>'
-            f'⭐ 自选 {wl_count} 只 · AI 量化投研工作站'
-            f'</div></div>'
+            f'<span class="ssm-version">{app_version}</span>'
+            f"&nbsp;SSM Quantum Pro<br>"
+            f"⭐ 自选 {wl_count} 只 · AI 量化投研工作站"
+            f"</div></div>"
         )

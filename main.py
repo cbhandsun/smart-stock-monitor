@@ -1,26 +1,32 @@
-import os
 import logging
 import pandas as pd
 import streamlit as st
 import requests
 import re
-import datetime
-import concurrent.futures
 import time
 import json
+from core.file_cache import cleanup_old_cache, load_from_cache, save_to_cache
+
+
 # 延迟导入 data_loader (akshare 很重, 首屏不需要)
 def fetch_trading_signals(*a, **kw):
     from modules.data_loader import fetch_trading_signals as _f
+
     return _f(*a, **kw)
+
+
 def fetch_kline(*a, **kw):
     from modules.data_loader import fetch_kline as _f
+
     return _f(*a, **kw)
+
 
 logger = logging.getLogger(__name__)
 
 # Redis L1 缓存 (快速内存缓存)
 try:
     from core.cache import RedisCache
+
     _redis = RedisCache()
     if not _redis.ping():
         _redis = None
@@ -29,9 +35,6 @@ try:
         logger.info("Redis L1 缓存已启用")
 except Exception:
     _redis = None
-
-# 文件缓存 L2 (已封装到 core/file_cache.py)
-from core.file_cache import load_from_cache, save_to_cache, cleanup_old_cache
 
 # 启动时自动清理过期缓存
 cleanup_old_cache()
@@ -48,26 +51,33 @@ def get_market_overview():
 
     try:
         url = "https://hq.sinajs.cn/list=s_sh000001,s_sz399001,s_sz399006"
-        headers = {'Referer': 'https://finance.sina.com.cn/'}
+        headers = {"Referer": "https://finance.sina.com.cn/"}
         resp = requests.get(url, headers=headers, timeout=5)
         text = resp.text
         data = []
-        for line in text.strip().split(';'):
+        for line in text.strip().split(";"):
             if '="' in line:
                 key, val = line.split('="')
                 val = val.strip('"')
-                parts = val.split(',')
+                parts = val.split(",")
                 if len(parts) > 3:
-                    data.append({'名称': parts[0], '最新价': float(parts[1]), '涨跌幅': float(parts[3])})
+                    data.append(
+                        {
+                            "名称": parts[0],
+                            "最新价": float(parts[1]),
+                            "涨跌幅": float(parts[3]),
+                        }
+                    )
         df = pd.DataFrame(data)
         if not df.empty:
             # 写入 Redis L1 (60 秒 TTL)
             if _redis:
                 _redis.set_market_overview(df, expire=60)
             return df
-    except Exception as e:
-        logger.warning(f"获取市场概览失败: {e}")
-    return pd.DataFrame(columns=['名称', '最新价', '涨跌幅'])
+    except Exception:
+        logger.warning("获取市场概览失败")
+    return pd.DataFrame(columns=["名称", "最新价", "涨跌幅"])
+
 
 def fetch_sina_market_snapshot(page=1):
     """通过新浪财经接口抓取全市场快照 (作为 AkShare 失效时的备选)"""
@@ -75,21 +85,30 @@ def fetch_sina_market_snapshot(page=1):
     try:
         r = requests.get(url, timeout=5)
         text = r.text
-        text = re.sub(r'([\{,])(\w+):', r'\1"\2":', text)
+        text = re.sub(r"([\{,])(\w+):", r'\1"\2":', text)
         # json 已在文件顶部导入
         data = json.loads(text)
         df = pd.DataFrame(data)
         if not df.empty:
-            df.rename(columns={
-                'symbol': '代码', 'name': '名称', 'trade': '最新价',
-                'changepercent': '涨跌幅', 'per': '市盈率', 'pb': '市净率',
-                'amount': '成交额', 'turnoverratio': '换手率'
-            }, inplace=True)
-            df['代码'] = df['代码'].apply(lambda x: x[2:] if len(x) > 2 else x)
+            df.rename(
+                columns={
+                    "symbol": "代码",
+                    "name": "名称",
+                    "trade": "最新价",
+                    "changepercent": "涨跌幅",
+                    "per": "市盈率",
+                    "pb": "市净率",
+                    "amount": "成交额",
+                    "turnoverratio": "换手率",
+                },
+                inplace=True,
+            )
+            df["代码"] = df["代码"].apply(lambda x: x[2:] if len(x) > 2 else x)
             return df
-    except Exception as e:
-        print(f"Sina Fetch Error: {e}")
+    except Exception:
+        logger.warning("Sina 行情获取失败")
     return pd.DataFrame()
+
 
 def get_full_market_data():
     """抓取全市场快照 — Redis L1 (300s) + 文件 L2"""
@@ -112,127 +131,160 @@ def get_full_market_data():
     # 优先 Tushare 当日快照
     try:
         from core.tushare_client import get_ts_client
+
         ts = get_ts_client()
         if ts.available:
             snap = ts.get_daily_snapshot()
             if snap is not None and not snap.empty:
                 # 获取名称映射
                 name_map = ts.get_name_map()
-                snap['名称'] = snap['ts_code'].apply(
-                    lambda x: name_map.get(x.split('.')[0], x))
-                snap.rename(columns={
-                    'ts_code': '代码', 'pct_chg': '涨跌幅',
-                    'close': '最新价', 'vol': '成交量', 'amount': '成交额',
-                    'pe': '市盈率', 'pb': '市净率', 'turnover_rate': '换手率'
-                }, inplace=True)
-                snap['代码'] = snap['代码'].apply(lambda x: x.split('.')[0])
+                snap["名称"] = snap["ts_code"].apply(
+                    lambda x: name_map.get(x.split(".")[0], x)
+                )
+                snap.rename(
+                    columns={
+                        "ts_code": "代码",
+                        "pct_chg": "涨跌幅",
+                        "close": "最新价",
+                        "vol": "成交量",
+                        "amount": "成交额",
+                        "pe": "市盈率",
+                        "pb": "市净率",
+                        "turnover_rate": "换手率",
+                    },
+                    inplace=True,
+                )
+                snap["代码"] = snap["代码"].apply(lambda x: x.split(".")[0])
                 df = snap
-    except Exception as e:
-        logger.warning(f"Tushare 全市场快照获取失败: {e}")
+    except Exception:
+        logger.warning("Tushare 全市场快照获取失败")
 
     # 尝试 EM 源 (AkShare)
     if df.empty:
         try:
             import akshare as ak
+
             df = ak.stock_zh_a_spot_em()
-        except Exception as e:
-            logger.warning(f"AkShare 全市场快照获取失败: {e}")
-    
+        except Exception:
+            logger.warning("AkShare 全市场快照获取失败")
+
     # Sina 兜底
     if df.empty:
         pages = []
         for p in range(1, 4):
             pdf = fetch_sina_market_snapshot(page=p)
-            if not pdf.empty: pages.append(pdf)
+            if not pdf.empty:
+                pages.append(pdf)
             time.sleep(0.5)
         if pages:
             df = pd.concat(pages, ignore_index=True)
-    
+
     if not df.empty:
         save_to_cache(cache_key, df)
         if _redis:
             _redis.set(f"market:{cache_key}", df, expire=300)
     return df
 
+
 @st.cache_data(ttl=86400, show_spinner=False)
 def find_value_stocks(pe_max=25, pb_max=2.5):
     df = get_full_market_data()
-    if df.empty: return pd.DataFrame()
-    
+    if df.empty:
+        return pd.DataFrame()
+
     # 向量化过滤 (Pandas 已经很快，主要是后续逻辑提速)
-    pe_col = '市盈率' if '市盈率' in df.columns else '市盈率-动态'
-    pb_col = '市净率'
-    
+    pe_col = "市盈率" if "市盈率" in df.columns else "市盈率-动态"
+    pb_col = "市净率"
+
     # 检查是否有必要列缺失 (如 Tushare 接口返回的快照)
     if pe_col not in df.columns or pb_col not in df.columns:
         try:
             import akshare as ak
+
             df = ak.stock_zh_a_spot_em()
-            pe_col = '市盈率' if '市盈率' in df.columns else '市盈率-动态'
+            pe_col = "市盈率" if "市盈率" in df.columns else "市盈率-动态"
             if pb_col not in df.columns:
                 raise ValueError("AkShare missing pb")
-        except Exception as e:
-            logger.warning(f"AkShare fallback failed in find_value_stocks: {e}")
+        except Exception:
+            logger.warning("AkShare 价值股回退查询失败")
             try:
                 # 再次兜底：使用 Sina
                 pages = []
                 for p in range(1, 4):
                     pdf = fetch_sina_market_snapshot(page=p)
-                    if not pdf.empty: pages.append(pdf)
+                    if not pdf.empty:
+                        pages.append(pdf)
                 if pages:
                     df = pd.concat(pages, ignore_index=True)
-                    pe_col = '市盈率'
+                    pe_col = "市盈率"
                 else:
                     return pd.DataFrame()
             except Exception:
                 return pd.DataFrame()
-        
+
         if pe_col not in df.columns or pb_col not in df.columns:
             return pd.DataFrame()
-            
-    df[pe_col] = pd.to_numeric(df[pe_col], errors='coerce')
-    df[pb_col] = pd.to_numeric(df[pb_col], errors='coerce')
-    mask = (df[pe_col] > 0) & (df[pe_col] < pe_max) & (df[pb_col] > 0) & (df[pb_col] < pb_max)
+
+    df[pe_col] = pd.to_numeric(df[pe_col], errors="coerce")
+    df[pb_col] = pd.to_numeric(df[pb_col], errors="coerce")
+    mask = (
+        (df[pe_col] > 0)
+        & (df[pe_col] < pe_max)
+        & (df[pb_col] > 0)
+        & (df[pb_col] < pb_max)
+    )
     filtered = df[mask].copy()
-    
+
     # 这里已经是向量化操作，性能不错，主要加速在于 data feeding
-    filtered['综合得分'] = (1 / filtered[pe_col]) + (1 / filtered[pb_col])
-    res = filtered.sort_values(by='综合得分', ascending=False).head(15)
-    return res[['代码', '名称', '最新价', '涨跌幅', pe_col, pb_col]].rename(columns={pe_col: 'PE', pb_col: 'PB'})
+    filtered["综合得分"] = (1 / filtered[pe_col]) + (1 / filtered[pb_col])
+    res = filtered.sort_values(by="综合得分", ascending=False).head(15)
+    return res[["代码", "名称", "最新价", "涨跌幅", pe_col, pb_col]].rename(
+        columns={pe_col: "PE", pb_col: "PB"}
+    )
+
 
 # 辅助函数用于并行映射 (如果需要更复杂的计算逻辑，目前 Pandas 是最快的)
 # 但如果有自定义特征提取，并行才有意义。目前的策略筛选主要是列运算，Pandas 已经是 C 层级加速。
 # 真正的分析加速点在 PredictiveAnalyzer 的特征预热。
 
+
 @st.cache_data(ttl=86400, show_spinner=False)
 def find_momentum_stocks():
     df = get_full_market_data()
-    if df.empty: return pd.DataFrame()
-    try:
-        df['涨跌幅'] = pd.to_numeric(df['涨跌幅'], errors='coerce')
-        df['最新价'] = pd.to_numeric(df['最新价'], errors='coerce')
-        df['成交额'] = pd.to_numeric(df['成交额'], errors='coerce')
-        mask = (df['涨跌幅'] > 1) & (df['涨跌幅'] < 9)
-        filtered = df[mask].copy()
-        return filtered.sort_values(by='涨跌幅', ascending=False).head(15)[['代码', '名称', '最新价', '涨跌幅', '成交额']]
-    except Exception as e:
-        logger.warning(f"动量股筛选失败: {e}")
+    if df.empty:
         return pd.DataFrame()
+    try:
+        df["涨跌幅"] = pd.to_numeric(df["涨跌幅"], errors="coerce")
+        df["最新价"] = pd.to_numeric(df["最新价"], errors="coerce")
+        df["成交额"] = pd.to_numeric(df["成交额"], errors="coerce")
+        mask = (df["涨跌幅"] > 1) & (df["涨跌幅"] < 9)
+        filtered = df[mask].copy()
+        return filtered.sort_values(by="涨跌幅", ascending=False).head(15)[
+            ["代码", "名称", "最新价", "涨跌幅", "成交额"]
+        ]
+    except Exception:
+        logger.warning("动量股筛选失败")
+        return pd.DataFrame()
+
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def find_growth_stocks():
     df = get_full_market_data()
-    if df.empty: return pd.DataFrame()
-    try:
-        df['成交额'] = pd.to_numeric(df['成交额'], errors='coerce')
-        df['最新价'] = pd.to_numeric(df['最新价'], errors='coerce')
-        df['涨跌幅'] = pd.to_numeric(df['涨跌幅'], errors='coerce')
-        mask = (df['成交额'] > 100000000)
-        filtered = df[mask].copy()
-        return filtered.sort_values(by='成交额', ascending=False).head(15)[['代码', '名称', '最新价', '涨跌幅', '成交额']]
-    except Exception as e:
-        logger.warning(f"成长股筛选失败: {e}")
+    if df.empty:
         return pd.DataFrame()
+    try:
+        df["成交额"] = pd.to_numeric(df["成交额"], errors="coerce")
+        df["最新价"] = pd.to_numeric(df["最新价"], errors="coerce")
+        df["涨跌幅"] = pd.to_numeric(df["涨跌幅"], errors="coerce")
+        mask = df["成交额"] > 100000000
+        filtered = df[mask].copy()
+        return filtered.sort_values(by="成交额", ascending=False).head(15)[
+            ["代码", "名称", "最新价", "涨跌幅", "成交额"]
+        ]
+    except Exception:
+        logger.warning("成长股筛选失败")
+        return pd.DataFrame()
+
 
 def generate_ai_report_stream(symbol, name, full_symbol):
     """
@@ -241,7 +293,7 @@ def generate_ai_report_stream(symbol, name, full_symbol):
     try:
         from core.ai_client import call_ai_for_stock_diagnosis_stream
         from pages.market import _get_quick_signals
-        
+
         # 1. 顺序抓取避免 Streamlit 线程上下文丢失引发的 'AI 流式诊断模块加载失败' 的Bug
         reports_df = get_stock_reports(symbol)
         signals = get_trading_signals(full_symbol)
@@ -249,15 +301,18 @@ def generate_ai_report_stream(symbol, name, full_symbol):
             dna_data = _get_quick_signals(symbol)
         except Exception:
             dna_data = {}
-            
+
         # 2. 传递 DNA 评分与标签到 AI (统一结论)
-        dna_score = dna_data.get('score', 0)
-        dna_tags = dna_data.get('tags', [])
-        
+        dna_score = dna_data.get("score", 0)
+        dna_tags = dna_data.get("tags", [])
+
         # 3. 调用流式 AI
-        yield from call_ai_for_stock_diagnosis_stream(symbol, name, reports_df, signals, dna_score, dna_tags)
-    except Exception as e:
-        yield f"AI 流式诊断模块加载失败: {e}"
+        yield from call_ai_for_stock_diagnosis_stream(
+            symbol, name, reports_df, signals, dna_score, dna_tags
+        )
+    except Exception:
+        yield "AI 流式诊断模块暂时不可用，请稍后重试。"
+
 
 def generate_ai_report(symbol, name, full_symbol):
     """同步阻塞获取报告 (用于后台任务或非流式场景)"""
@@ -267,10 +322,12 @@ def generate_ai_report(symbol, name, full_symbol):
         full_text += chunk
     return full_text
 
+
 @st.cache_data(ttl=86400, show_spinner=False)
 def get_stock_names_batch(codes):
     """批量获取股票名称 — Tushare+PG 优先, Sina 兜底 (24h 缓存)"""
-    if not codes: return {}
+    if not codes:
+        return {}
 
     # L1: Redis
     sorted_codes = sorted([c.strip() for c in codes])
@@ -284,6 +341,7 @@ def get_stock_names_batch(codes):
     name_map = {}
     try:
         from core.tushare_client import get_ts_client
+
         ts_map = get_ts_client().get_name_map()
         if ts_map:
             for c in codes:
@@ -302,21 +360,23 @@ def get_stock_names_batch(codes):
     if missing:
         sina_codes = [f"{'s_sh' if c.startswith('6') else 's_sz'}{c}" for c in missing]
         url = f"https://hq.sinajs.cn/list={','.join(sina_codes)}"
-        headers = {'Referer': 'https://finance.sina.com.cn/'}
+        headers = {"Referer": "https://finance.sina.com.cn/"}
         try:
             r = requests.get(url, headers=headers, timeout=3)
-            for line in r.text.split(';'):
+            for line in r.text.split(";"):
                 if '="' in line:
-                    key = line.split('=')[0].split('_')[-1]
-                    name = line.split('="')[1].split(',')[0]
+                    key = line.split("=")[0].split("_")[-1]
+                    name = line.split('="')[1].split(",")[0]
                     for c in missing:
-                        if c in key: name_map[c] = name
-        except Exception as e:
-            logger.warning(f"Sina 获取股票名称失败: {e}")
+                        if c in key:
+                            name_map[c] = name
+        except Exception:
+            logger.warning("Sina 获取股票名称失败")
 
     if name_map and _redis:
         _redis.set(cache_key, name_map, expire=86400)
     return name_map
+
 
 def get_stock_reports(symbol):
     cache_key = f"reports:{symbol}"
@@ -326,13 +386,15 @@ def get_stock_reports(symbol):
             return cached
     try:
         import akshare as ak
+
         result = ak.stock_zyjs_report_em(symbol=symbol).head(3)
         if not result.empty and _redis:
             _redis.set(cache_key, result, expire=3600)
         return result
-    except Exception as e:
-        logger.warning(f"获取研报失败 {symbol}: {e}")
+    except Exception:
+        logger.warning("获取研报失败")
         return pd.DataFrame()
+
 
 def get_profit_forecast(symbol):
     """获取盈利预测 — Tushare 优先, AkShare 兜底"""
@@ -344,6 +406,7 @@ def get_profit_forecast(symbol):
     # Tushare
     try:
         from core.tushare_client import get_ts_client
+
         ts = get_ts_client()
         if ts.available:
             result = ts.get_forecast(symbol)
@@ -356,19 +419,23 @@ def get_profit_forecast(symbol):
     # AkShare 兜底
     try:
         import akshare as ak
+
         result = ak.stock_profit_forecast_em(symbol=symbol).head(1)
         if not result.empty and _redis:
             _redis.set(cache_key, result, expire=3600)
         return result
-    except Exception as e:
-        logger.warning(f"获取盈利预测失败 {symbol}: {e}")
+    except Exception:
+        logger.warning("获取盈利预测失败")
         return pd.DataFrame()
+
 
 def get_trading_signals(symbol):
     return fetch_trading_signals(symbol)
 
+
 def get_stock_kline_data(symbol):
     return fetch_kline(symbol)
+
 
 def get_sector_flow(symbol):
     cache_key = f"sector_flow:{symbol}"
@@ -378,20 +445,26 @@ def get_sector_flow(symbol):
             return cached
     try:
         import akshare as ak
+
         sector_flow = ak.stock_sector_fund_flow_rank(indicator="今日")
-        if sector_flow.empty: return "数据暂缺", pd.DataFrame()
-        top_sector = sector_flow.sort_values(by='主力净流入-净额', ascending=False).iloc[0]
-        sector_name = top_sector['名称']
+        if sector_flow.empty:
+            return "数据暂缺", pd.DataFrame()
+        top_sector = sector_flow.sort_values(
+            by="主力净流入-净额", ascending=False
+        ).iloc[0]
+        sector_name = top_sector["名称"]
         try:
             stocks_in_sector = ak.stock_board_industry_cons_em(symbol=sector_name)
-            trend_stocks = stocks_in_sector[stocks_in_sector['涨跌幅'] > 2].sort_values(by='涨跌幅', ascending=False)
+            trend_stocks = stocks_in_sector[stocks_in_sector["涨跌幅"] > 2].sort_values(
+                by="涨跌幅", ascending=False
+            )
             result = (sector_name, trend_stocks.head(5))
             if _redis:
                 _redis.set(cache_key, result, expire=300)
             return result
-        except Exception as e:
-            logger.warning(f"获取板块成分股失败 {sector_name}: {e}")
+        except Exception:
+            logger.warning("获取板块成分股失败")
             return sector_name, pd.DataFrame()
-    except Exception as e:
-        logger.warning(f"获取板块资金流向失败: {e}")
+    except Exception:
+        logger.warning("获取板块资金流向失败")
         return "未知板块", pd.DataFrame()

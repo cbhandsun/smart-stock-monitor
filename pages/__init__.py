@@ -1,134 +1,127 @@
 """
 页面模块包 - 共享上下文和工具函数
 """
+
 import os
-import json
 import datetime
 import logging
+from uuid import uuid4
+
+from core.user_context import require_user_id
 
 logger = logging.getLogger(__name__)
 
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WATCHLIST_FILE = os.path.join(_BASE_DIR, "data", "watchlist.json")
 REPORT_DIR = os.path.join(_BASE_DIR, "data", "reports")
 
 
 def load_watchlist():
     """加载自选股列表 (PostgreSQL版)"""
+    from database.models import UserPortfolio, get_db
+
+    user_id = require_user_id()
+    session = get_db().get_session()
     try:
-        from database.models import get_db, UserPortfolio
-        import streamlit as st
-        
-        user_id = 'default_user'
-        if st.runtime.exists():
-            user_id = st.session_state.get('user_id', 'default_user')
-            
-        db = get_db()
-        session = db.get_session()
-        
-        # 查找名为 "默认自选" 的组合
-        pf = session.query(UserPortfolio).filter_by(user_id=user_id, name="默认自选").first()
+        pf = (
+            session.query(UserPortfolio)
+            .filter_by(user_id=user_id, name="默认自选")
+            .first()
+        )
         if pf and pf.stocks:
-            symbols = []
+            symbols: list[str] = []
             for s in pf.stocks:
-                if isinstance(s, dict):
-                    symbols.append(s.get('symbol'))
-                else:
-                    symbols.append(s)
-            session.close()
-            # 过滤掉 None 或者空字符串
-            return [sym for sym in symbols if sym]
-            
+                value = s.get("symbol") if isinstance(s, dict) else s
+                if isinstance(value, str) and value.isdigit() and len(value) == 6:
+                    symbols.append(value)
+            return list(dict.fromkeys(symbols))
+        return []
+    except Exception:
+        logger.error("Failed to load the authenticated user's watchlist")
+        raise
+    finally:
         session.close()
-    except Exception as e:
-        logger.error(f"Failed to load watchlist from DB: {e}")
-        
-    # 如果数据库无数据，尝试读取文件做旧数据迁移，或者返回默认
-    if os.path.exists(WATCHLIST_FILE):
-        try:
-            with open(WATCHLIST_FILE, "r") as f:
-                symbols = json.load(f)
-                # 顺便迁移到数据库
-                save_watchlist(symbols)
-                return symbols
-        except Exception:
-            pass
-            
-    return ["601318"]
 
 
 def save_watchlist(stocks):
     """保存自选股列表 (PostgreSQL版)"""
+    from database.models import UserPortfolio, get_db
+
+    if not isinstance(stocks, (list, tuple, set)) or len(stocks) > 500:
+        raise ValueError("自选股列表格式不正确或超过500只上限")
+    symbols: list[str] = []
+    for stock in stocks:
+        if not isinstance(stock, str) or not stock.isdigit() or len(stock) != 6:
+            raise ValueError("自选股代码必须是6位数字")
+        if stock not in symbols:
+            symbols.append(stock)
+
+    user_id = require_user_id()
+    session = get_db().get_session()
     try:
-        from database.models import get_db, UserPortfolio
-        import streamlit as st
-        
-        user_id = 'default_user'
-        if st.runtime.exists():
-            user_id = st.session_state.get('user_id', 'default_user')
-            
-        db = get_db()
-        session = db.get_session()
-        
-        # 转换格式为 [{"symbol": s} for s in stocks]
-        stocks_data = [{
-            "symbol": s, 
-            "name": s, 
-            "quantity": 0, 
-            "avg_cost": 0.0, 
-            "tags": [], 
-            "notes": "", 
-            "added_date": datetime.datetime.now().isoformat()
-        } for s in stocks if s]
-        
-        pf = session.query(UserPortfolio).filter_by(user_id=user_id, name="默认自选").first()
+        stocks_data = [
+            {
+                "symbol": s,
+                "name": s,
+                "quantity": 0,
+                "avg_cost": 0.0,
+                "tags": [],
+                "notes": "",
+                "added_date": datetime.datetime.now().isoformat(),
+            }
+            for s in symbols
+        ]
+
+        pf = (
+            session.query(UserPortfolio)
+            .filter_by(user_id=user_id, name="默认自选")
+            .first()
+        )
         if pf:
             pf.stocks = stocks_data
             pf.updated_at = datetime.datetime.now()
         else:
             pf = UserPortfolio(
-                id=f"watchlist_default_{user_id}",
+                id=f"portfolio_{uuid4().hex}",
                 user_id=user_id,
                 name="默认自选",
                 description="系统默认自选股组合",
-                stocks=stocks_data
+                stocks=stocks_data,
             )
             session.add(pf)
-            
+
         session.commit()
-        session.close()
-    except Exception as e:
-        logger.error(f"Failed to save watchlist to DB: {e}")
-        
-    # 同时在本地写入一份做灾备兜底，防止数据库故障
-    try:
-        with open(WATCHLIST_FILE, "w") as f:
-            json.dump(stocks, f)
     except Exception:
-        pass
+        session.rollback()
+        logger.error("Failed to save the authenticated user's watchlist")
+        raise
+    finally:
+        session.close()
 
 
 def load_cached_report(symbol: str):
     """加载缓存的AI报告 (PostgreSQL版)"""
     try:
         from database.models import get_db, ResearchReport
-        
+
         db = get_db()
         session = db.get_session()
         today = datetime.datetime.now().date()
-        
+
         # 查找今天最新的报告
-        report = session.query(ResearchReport).filter(
-            ResearchReport.symbol == symbol
-        ).order_by(ResearchReport.report_date.desc()).first()
-        
+        report = (
+            session.query(ResearchReport)
+            .filter(ResearchReport.symbol == symbol)
+            .order_by(ResearchReport.report_date.desc())
+            .first()
+        )
+
         if report and report.report_date and report.report_date.date() == today:
             content = report.content
             session.close()
             return content, True
-            
+
         session.close()
-    except Exception as e:
-        logger.error(f"Failed to load cached report from DB for {symbol}: {e}")
-        
+    except Exception:
+        logger.error("Cached report read failed")
+
     return None, False
