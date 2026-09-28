@@ -33,3 +33,4 @@ cache/
 .vscode/
 ai_client.py
 *.sql
+report_gen.py
