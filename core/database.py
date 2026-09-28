@@ -25,14 +25,16 @@ def get_engine():
     if _engine is not None:
         return _engine
 
-    host = os.getenv('PG_HOST', 'postgres')
-    port = os.getenv('PG_PORT', '5432')
-    user = os.getenv('PG_USER', 'ssm')
-    password = os.getenv('PG_PASSWORD')
+    host = os.getenv("PG_HOST", "postgres")
+    port = os.getenv("PG_PORT", "5432")
+    user = os.getenv("PG_USER", "ssm")
+    password = os.getenv("PG_PASSWORD")
     if not password:
-        password = 'ssm_secure_2026'
-        logger.warning("⚠️ SECURITY WARNING: Using default database password. Please configure PG_PASSWORD in your environment/dotenv file.")
-    database = os.getenv('PG_DATABASE', 'stock_data')
+        password = "ssm_secure_2026"
+        logger.warning(
+            "⚠️ SECURITY WARNING: Using default database password. Please configure PG_PASSWORD in your environment/dotenv file."
+        )
+    database = os.getenv("PG_DATABASE", "stock_data")
 
     url = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}"
 
@@ -42,8 +44,8 @@ def get_engine():
             poolclass=QueuePool,
             pool_size=5,
             max_overflow=10,
-            pool_pre_ping=True,    # 自动检测断连
-            pool_recycle=1800,     # 30分钟回收连接
+            pool_pre_ping=True,  # 自动检测断连
+            pool_recycle=1800,  # 30分钟回收连接
             echo=False,
         )
         # 验证连接
@@ -51,8 +53,8 @@ def get_engine():
             conn.execute(text("SELECT 1"))
         logger.info("✅ PostgreSQL 连接成功")
         return _engine
-    except Exception as e:
-        logger.warning(f"⚠️ PostgreSQL 连接失败: {e}")
+    except Exception:
+        logger.warning("PostgreSQL connection failed")
         _engine = None
         return None
 
@@ -167,17 +169,19 @@ def init_tables():
             conn.commit()
         logger.info("✅ 数据库表初始化完成")
         return True
-    except Exception as e:
-        logger.error(f"❌ 建表失败: {e}")
+    except Exception:
+        logger.error("PostgreSQL schema creation failed")
         return False
 
 
 # ---- 读写工具 ----
 
-ALLOWED_KLINE_TABLES = {'kline_daily', 'kline_weekly', 'kline_monthly'}
+ALLOWED_KLINE_TABLES = {"kline_daily", "kline_weekly", "kline_monthly"}
 
-def read_kline(ts_code: str, table: str = 'kline_daily',
-               limit: int = 200) -> Optional[pd.DataFrame]:
+
+def read_kline(
+    ts_code: str, table: str = "kline_daily", limit: int = 200
+) -> Optional[pd.DataFrame]:
     """从 PG 读取 K 线数据"""
     if table not in ALLOWED_KLINE_TABLES:
         raise ValueError(f"Unauthorized table query attempted: {table}")
@@ -193,19 +197,18 @@ def read_kline(ts_code: str, table: str = 'kline_daily',
             ORDER BY trade_date DESC
             LIMIT :limit
         """)
-        df = pd.read_sql(sql, engine, params={'code': ts_code, 'limit': limit})
+        df = pd.read_sql(sql, engine, params={"code": ts_code, "limit": limit})
         if df.empty:
             return None
         # 反转为时间升序
         df = df.iloc[::-1].reset_index(drop=True)
         return df
-    except Exception as e:
-        logger.error(f"PG read_kline error: {e}")
+    except Exception:
+        logger.error("PostgreSQL K-line read failed")
         return None
 
 
-def write_kline(df: pd.DataFrame, ts_code: str,
-                table: str = 'kline_daily'):
+def write_kline(df: pd.DataFrame, ts_code: str, table: str = "kline_daily"):
     """写入 K 线数据 (批量 UPSERT — executemany)"""
     if table not in ALLOWED_KLINE_TABLES:
         raise ValueError(f"Unauthorized table write attempted: {table}")
@@ -216,31 +219,43 @@ def write_kline(df: pd.DataFrame, ts_code: str,
 
     try:
         df = df.copy()
-        if 'ts_code' not in df.columns:
-            df['ts_code'] = ts_code
+        if "ts_code" not in df.columns:
+            df["ts_code"] = ts_code
 
-        cols = ['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'vol', 'amount', 'pct_chg']
+        cols = [
+            "ts_code",
+            "trade_date",
+            "open",
+            "high",
+            "low",
+            "close",
+            "vol",
+            "amount",
+            "pct_chg",
+        ]
         available = [c for c in cols if c in df.columns]
-        df_write = df[available].dropna(subset=['trade_date'])
+        df_write = df[available].dropna(subset=["trade_date"])
 
         if df_write.empty:
             return
 
         # 批量 UPSERT — 1 次数据库往返代替 N 次
-        update_cols = [c for c in available if c not in ('ts_code', 'trade_date')]
+        update_cols = [c for c in available if c not in ("ts_code", "trade_date")]
         upsert_sql = text(f"""
-            INSERT INTO {table} ({', '.join(available)})
-            VALUES ({', '.join(':' + c for c in available)})
+            INSERT INTO {table} ({", ".join(available)})
+            VALUES ({", ".join(":" + c for c in available)})
             ON CONFLICT (ts_code, trade_date) DO UPDATE SET
-            {', '.join(f'{c} = EXCLUDED.{c}' for c in update_cols)}
+            {", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)}
         """)
-        records = df_write.where(pd.notnull(df_write), None).to_dict(orient='records')
+        records = df_write.where(pd.notnull(df_write), None).to_dict(orient="records")
         with engine.connect() as conn:
             conn.execute(upsert_sql, records)
             conn.commit()
-        logger.debug(f"PG write_kline: {ts_code} {len(records)} rows → {table}")
-    except Exception as e:
-        logger.error(f"PG write_kline error: {e}")
+        logger.debug(
+            "PostgreSQL K-line write succeeded", extra={"row_count": len(records)}
+        )
+    except Exception:
+        logger.error("PostgreSQL K-line write failed")
 
 
 def read_stock_basic(symbol: str = None) -> Optional[pd.DataFrame]:
@@ -250,8 +265,10 @@ def read_stock_basic(symbol: str = None) -> Optional[pd.DataFrame]:
         return None
     try:
         if symbol:
-            sql = text("SELECT ts_code, symbol, name, area, industry, market, list_date FROM stock_basic WHERE symbol = :sym")
-            return pd.read_sql(sql, engine, params={'sym': symbol})
+            sql = text(
+                "SELECT ts_code, symbol, name, area, industry, market, list_date FROM stock_basic WHERE symbol = :sym"
+            )
+            return pd.read_sql(sql, engine, params={"sym": symbol})
         else:
             # 仅取 name_map 所需的关键字段，避免全列传输
             sql = text("SELECT ts_code, symbol, name FROM stock_basic")
@@ -266,27 +283,31 @@ def write_stock_basic(df: pd.DataFrame):
     if not engine or df is None or df.empty:
         return
     try:
-        cols = ['ts_code', 'symbol', 'name', 'area', 'industry', 'market', 'list_date']
+        cols = ["ts_code", "symbol", "name", "area", "industry", "market", "list_date"]
         available = [c for c in cols if c in df.columns]
         df_write = df[available].copy()
-        df_write['updated_at'] = datetime.now()
-        available_with_ts = available + ['updated_at']
+        df_write["updated_at"] = datetime.now()
+        available_with_ts = available + ["updated_at"]
 
-        update_cols = [c for c in available if c != 'ts_code']
+        update_cols = [c for c in available if c != "ts_code"]
         upsert_sql = text(f"""
-            INSERT INTO stock_basic ({', '.join(available_with_ts)})
-            VALUES ({', '.join(':' + c for c in available_with_ts)})
+            INSERT INTO stock_basic ({", ".join(available_with_ts)})
+            VALUES ({", ".join(":" + c for c in available_with_ts)})
             ON CONFLICT (ts_code) DO UPDATE SET
-            {', '.join(f'{c} = EXCLUDED.{c}' for c in update_cols)},
+            {", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)},
             updated_at = EXCLUDED.updated_at
         """)
-        records = df_write.where(pd.notnull(df_write), None).to_dict(orient='records')
+        records = df_write.where(pd.notnull(df_write), None).to_dict(orient="records")
         with engine.connect() as conn:
             conn.execute(upsert_sql, records)
             conn.commit()
-        logger.info(f"PG write_stock_basic: {len(records)} rows")
-    except Exception as e:
-        logger.error(f"PG write_stock_basic error: {e}")
+        logger.info(
+            "PostgreSQL stock metadata write succeeded",
+            extra={"row_count": len(records)},
+        )
+    except Exception:
+        logger.error("PostgreSQL stock metadata write failed")
+
 
 def write_daily_basic(df: pd.DataFrame):
     """写入每日估值指标 (批量 UPSERT — executemany)"""
@@ -294,24 +315,33 @@ def write_daily_basic(df: pd.DataFrame):
     if not engine or df is None or df.empty:
         return
     try:
-        cols = ['ts_code', 'trade_date', 'turnover_rate', 'pe', 'pb', 'total_mv', 'float_mv']
+        cols = [
+            "ts_code",
+            "trade_date",
+            "turnover_rate",
+            "pe",
+            "pb",
+            "total_mv",
+            "float_mv",
+        ]
         available = [c for c in cols if c in df.columns]
         df_write = df[available].copy()
 
-        update_cols = [c for c in available if c not in ('ts_code', 'trade_date')]
+        update_cols = [c for c in available if c not in ("ts_code", "trade_date")]
         upsert_sql = text(f"""
-            INSERT INTO stock_daily_basic ({', '.join(available)}, updated_at)
-            VALUES ({', '.join(':' + c for c in available)}, NOW())
+            INSERT INTO stock_daily_basic ({", ".join(available)}, updated_at)
+            VALUES ({", ".join(":" + c for c in available)}, NOW())
             ON CONFLICT (ts_code, trade_date) DO UPDATE SET
-            {', '.join(f'{c} = EXCLUDED.{c}' for c in update_cols)},
+            {", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)},
             updated_at = NOW()
         """)
-        records = df_write.where(pd.notnull(df_write), None).to_dict(orient='records')
+        records = df_write.where(pd.notnull(df_write), None).to_dict(orient="records")
         with engine.connect() as conn:
             conn.execute(upsert_sql, records)
             conn.commit()
-    except Exception as e:
-        logger.warning(f"PG write_daily_basic error: {e}")
+    except Exception:
+        logger.warning("PostgreSQL daily metadata write failed")
+
 
 def write_macro_hsgt(df: pd.DataFrame):
     """写入宏观资金流 (批量 UPSERT — executemany)"""
@@ -319,24 +349,25 @@ def write_macro_hsgt(df: pd.DataFrame):
     if not engine or df is None or df.empty:
         return
     try:
-        cols = ['trade_date', 'hgt', 'sgt', 'north_money', 'south_money']
+        cols = ["trade_date", "hgt", "sgt", "north_money", "south_money"]
         available = [c for c in cols if c in df.columns]
         df_write = df[available].copy()
 
-        update_cols = [c for c in available if c != 'trade_date']
+        update_cols = [c for c in available if c != "trade_date"]
         upsert_sql = text(f"""
-            INSERT INTO macro_hsgt ({', '.join(available)}, updated_at)
-            VALUES ({', '.join(':' + c for c in available)}, NOW())
+            INSERT INTO macro_hsgt ({", ".join(available)}, updated_at)
+            VALUES ({", ".join(":" + c for c in available)}, NOW())
             ON CONFLICT (trade_date) DO UPDATE SET
-            {', '.join(f'{c} = EXCLUDED.{c}' for c in update_cols)},
+            {", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)},
             updated_at = NOW()
         """)
-        records = df_write.where(pd.notnull(df_write), None).to_dict(orient='records')
+        records = df_write.where(pd.notnull(df_write), None).to_dict(orient="records")
         with engine.connect() as conn:
             conn.execute(upsert_sql, records)
             conn.commit()
-    except Exception as e:
-        logger.warning(f"PG write_macro_hsgt error: {e}")
+    except Exception:
+        logger.warning("PostgreSQL macro data write failed")
+
 
 def read_daily_basic(ts_code: str, limit: int = 200) -> Optional[pd.DataFrame]:
     """读取每日估值指标"""
@@ -351,10 +382,11 @@ def read_daily_basic(ts_code: str, limit: int = 200) -> Optional[pd.DataFrame]:
             ORDER BY trade_date DESC
             LIMIT :limit
         """)
-        df = pd.read_sql(sql, engine, params={'code': ts_code, 'limit': limit})
+        df = pd.read_sql(sql, engine, params={"code": ts_code, "limit": limit})
         return df if not df.empty else None
     except Exception:
         return None
+
 
 def read_macro_hsgt(limit: int = 100) -> Optional[pd.DataFrame]:
     """读取宏观资金流"""
@@ -363,7 +395,7 @@ def read_macro_hsgt(limit: int = 100) -> Optional[pd.DataFrame]:
         return None
     try:
         sql = text("SELECT * FROM macro_hsgt ORDER BY trade_date DESC LIMIT :limit")
-        df = pd.read_sql(sql, engine, params={'limit': limit})
+        df = pd.read_sql(sql, engine, params={"limit": limit})
         return df if not df.empty else None
     except Exception:
         return None

@@ -1,138 +1,157 @@
-import streamlit as st
-import logging
+"""Smart Stock Monitor application composition root."""
+
+from __future__ import annotations
+
 import importlib
+import logging
 import os
-from main import get_stock_names_batch
-from pages import load_watchlist, save_watchlist
+from pathlib import Path
+
+import streamlit as st
+
+from core.routing import DEFAULT_PAGE, DEFAULT_SYMBOL, parse_page, parse_symbol
+from core.theme import Theme, parse_theme
 from database.models import init_db
+from main import get_stock_names_batch
+from pages import load_watchlist
 
-# Initialize postgres early
-init_db(os.environ.get("DATABASE_URL", "sqlite:///./data/stock_monitor.db"))
 
-# ---- 页面配置 (Page Configuration) ----
-st.set_page_config(
-    page_title="SSM 机构级量化工作站 v8.0",
-    page_icon="🔮",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+logger = logging.getLogger(__name__)
 
-# ---- 样式加载 (Custom CSS) - 自愈鲁棒版 ----
-try:
-    with open('static/style.css', 'r') as f:
-        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
-except Exception:
-    logging.warning("⚠️ 样式加载失败，系统将采用极简 UI")
-
-# ---- 数据状态自愈层 (Persistence Layer) ----
-if 'current_page' not in st.session_state:
-    st.session_state['current_page'] = st.query_params.get('page', 'market')
-if 'selected_stock' not in st.session_state:
-    st.session_state['selected_stock'] = st.query_params.get('symbol', '601933')
-
-if '_last_query_page' not in st.session_state:
-    st.session_state['_last_query_page'] = st.session_state['current_page']
-if '_last_query_symbol' not in st.session_state:
-    st.session_state['_last_query_symbol'] = st.session_state['selected_stock']
-
-# 检测浏览器 URL 手动改变 (如回退/前进或手动输入)
-current_query_page = st.query_params.get('page', '')
-if current_query_page and current_query_page != st.session_state['_last_query_page']:
-    st.session_state['current_page'] = current_query_page
-    st.session_state['_last_query_page'] = current_query_page
-
-current_query_symbol = st.query_params.get('symbol', '')
-if current_query_symbol and current_query_symbol != st.session_state['_last_query_symbol']:
-    st.session_state['selected_stock'] = current_query_symbol
-    st.session_state['_last_query_symbol'] = current_query_symbol
-
-# ---- 数据初始化 (Data Pre-loading) ----
-my_stocks = load_watchlist()
-name_map = get_stock_names_batch(my_stocks + ['300750', '600519', '000001', '601933'])
-
-# ---- 本地化系统 (Localization) ----
 L = {
-    'market_discovery': '实时信号流',
-    'stock_dna': '研判 DNA',
-    'alpha_radar': '宏观雷达',
-    'ai_analyst': 'AI 策略师',
-    'anomaly_detect': '异动监控'
+    "market_discovery": "实时信号流",
+    "stock_dna": "研判 DNA",
+    "alpha_radar": "宏观雷达",
+    "ai_analyst": "AI 策略师",
+    "anomaly_detect": "异动监控",
 }
 NEW_MODULES_AVAILABLE = True
 
-# ---- 页面动态加载内核 (Lazy Route Core) ----
-def _get_page(page_name):
+
+def _load_styles(theme: Theme) -> None:
     try:
-        # 兼容性重定向
-        if page_name == 'macro': return importlib.import_module('pages.macro')
-        return importlib.import_module(f'pages.{page_name}')
-    except Exception as e:
-        logging.error(f"Failed to load page {page_name}: {e}")
+        style_path = Path("static/style.css")
+        if not style_path.is_file():
+            raise OSError("style asset is missing")
+        st.html(style_path)
+        if theme == "light":
+            light_style_path = Path("static/light-theme.css")
+            if not light_style_path.is_file():
+                raise OSError("light theme asset is missing")
+            st.html(light_style_path)
+    except OSError:
+        logger.warning("Custom styles are unavailable; using Streamlit defaults")
+
+
+def _require_authentication() -> None:
+    try:
+        from pages._login import check_auth, render_login_page
+    except ImportError:
+        logger.error("Security gatekeeper failed to load")
+        st.error("🚨 系统安全组件无法加载，访问已中止。请联系管理员。")
+        st.stop()
+
+    if not check_auth():
+        render_login_page()
+        st.stop()
+
+
+def _sync_navigation_state() -> tuple[str, str]:
+    query_page = parse_page(st.query_params.get("page"))
+    query_symbol = parse_symbol(st.query_params.get("symbol"))
+
+    current_page = parse_page(st.session_state.get("current_page", query_page))
+    selected_stock = parse_symbol(st.session_state.get("selected_stock", query_symbol))
+
+    if query_page != parse_page(st.session_state.get("_last_query_page")):
+        current_page = query_page
+    if query_symbol != parse_symbol(st.session_state.get("_last_query_symbol")):
+        selected_stock = query_symbol
+
+    st.session_state["current_page"] = current_page
+    st.session_state["selected_stock"] = selected_stock
+    st.session_state["_last_query_page"] = current_page
+    st.session_state["_last_query_symbol"] = selected_stock
+
+    if st.query_params.get("page") != current_page:
+        st.query_params["page"] = current_page
+    if st.query_params.get("symbol") != selected_stock:
+        st.query_params["symbol"] = selected_stock
+    return current_page, selected_stock
+
+
+def _load_page(page_name: str):
+    safe_page = parse_page(page_name)
+    try:
+        return importlib.import_module(f"pages.{safe_page}")
+    except (ImportError, AttributeError):
+        logger.error("Failed to load an allowed application page")
         return None
 
-def _route(page_name, render_args):
-    """主路由执行引擎"""
-    mod = _get_page(page_name)
-    if mod:
-        mod.render(*render_args)
-    else:
-        st.warning(f"⚠️ 模块 `{page_name}` 未加载，请检查部署日志")
 
-# ---- 全量路由配置项 (PAGE_RENDER_ARGS) - 逻辑定义置顶 ----
-PAGE_RENDER_ARGS = {
-    'macro':              (L,),
-    'market':             (L, my_stocks, name_map),
-    'recommend':          (L, my_stocks, name_map),
-    'ai_tracker':         (L, my_stocks, name_map),
-    'settings':           (L, NEW_MODULES_AVAILABLE),
-    'data_manager':       (L,),
-    'data_health':        (L,),                          # ← 数据完整性监控
-    'research_analyzer':  (L, name_map),
-    'portfolio':          (L,),
-    'alerts':             (L,),
-    'backtest':           (L,),
-    'research':           (L, my_stocks, name_map),
-    'ai_chat':            (L,),
-    'predict':            (L,),
-    'sentiment':          (L, my_stocks, name_map),
-    'anomaly':            (L, my_stocks, name_map),
-    'investment_advisor': (L,),
-}
+def _render_page(page_name: str, render_args: tuple[object, ...]) -> None:
+    module = _load_page(page_name)
+    render = getattr(module, "render", None) if module else None
+    if not callable(render):
+        st.error("当前页面暂时不可用，请返回市场首页后重试。")
+        if st.button("返回市场首页", type="primary"):
+            st.session_state["current_page"] = DEFAULT_PAGE
+            st.rerun()
+        return
+    render(*render_args)
 
-# ---- 认证拦截层 (Security Gatekeeper) ----
-try:
-    from pages._login import check_auth, render_login_page, render_user_menu
-except ImportError as e:
-    logging.critical(f"Security Gatekeeper failed to load: {e}")
-    st.error("🚨 **系统安全阻断**：认证拦截器模块无法加载，访问已被终止。请联系系统管理员检查日志。")
-    st.stop()
 
-# 强验证卡口：如果未登录，阻截所有渲染并仅展示登录页
-if not check_auth():
-    render_login_page()
-    st.stop()
+def main() -> None:
+    init_db(os.environ.get("DATABASE_URL", "sqlite:///./data/stock_monitor.db"))
+    theme = parse_theme(st.session_state.get("theme"))
+    st.session_state["theme"] = theme
+    _load_styles(theme)
+    _require_authentication()
 
-# ---- 侧边栏导航矩阵 (Hardened Navigation Matrix) ----
-try:
-    from components.sidebar import render_sidebar
-    render_sidebar(L, name_map, NEW_MODULES_AVAILABLE)
-except Exception as e:
-    logging.error(f"Failed to load sidebar: {e}")
-    st.sidebar.error("侧边栏加载失败")
+    current_page, _ = _sync_navigation_state()
+    try:
+        my_stocks = load_watchlist()
+    except Exception:
+        logger.error("Watchlist preload failed")
+        st.error("自选股暂时无法加载；其他页面仍可使用，请稍后重试。")
+        my_stocks = []
+    try:
+        name_map = get_stock_names_batch(
+            list(my_stocks) + ["300750", "600519", "000001", DEFAULT_SYMBOL]
+        )
+    except Exception:
+        logger.error("Stock name preload failed")
+        name_map = {}
 
-# ---- 同步 URL Query Params 并渲染 ----
-target_page = st.session_state.get('current_page', 'market')
-target_symbol = st.session_state.get('selected_stock', '601933')
+    page_render_args = {
+        "macro": (L,),
+        "market": (L, my_stocks, name_map),
+        "recommend": (L, my_stocks, name_map),
+        "ai_tracker": (L, my_stocks, name_map),
+        "settings": (L, NEW_MODULES_AVAILABLE),
+        "data_manager": (L,),
+        "data_health": (L,),
+        "research_analyzer": (L, name_map),
+        "portfolio": (L,),
+        "alerts": (L,),
+        "backtest": (L,),
+        "research": (L, my_stocks, name_map),
+        "ai_chat": (L,),
+        "predict": (L,),
+        "sentiment": (L, my_stocks, name_map),
+        "anomaly": (L, my_stocks, name_map),
+        "investment_advisor": (L,),
+    }
 
-if st.query_params.get('page', '') != target_page:
-    st.query_params['page'] = target_page
-    st.session_state['_last_query_page'] = target_page
+    try:
+        from components.sidebar import render_sidebar
 
-if st.query_params.get('symbol', '') != target_symbol:
-    st.query_params['symbol'] = target_symbol
-    st.session_state['_last_query_symbol'] = target_symbol
+        render_sidebar({**L, "watchlist": my_stocks}, name_map, NEW_MODULES_AVAILABLE)
+    except Exception:
+        logger.error("Sidebar failed to render")
+        st.sidebar.error("侧边栏加载失败，请刷新后重试。")
 
-current_page = target_page
-render_args = PAGE_RENDER_ARGS.get(current_page, (L,))
+    _render_page(current_page, page_render_args[current_page])
 
-_route(current_page, render_args)
+
+main()
