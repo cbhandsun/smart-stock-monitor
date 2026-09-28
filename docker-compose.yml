@@ -1,7 +1,23 @@
+x-app-image: &app-image
+  image: smart-stock-monitor:${APP_VERSION:-dev}
+  build: .
+
 services:
+  migrate:
+    <<: *app-image
+    command: alembic upgrade head
+    environment:
+      - PG_USER=${PG_USER:-ssm}
+      - PG_PASSWORD=${PG_PASSWORD:?PG_PASSWORD is required}
+      - PG_DATABASE=${PG_DATABASE:-stock_data}
+      - DATABASE_URL=postgresql://${PG_USER:-ssm}:${PG_PASSWORD:?PG_PASSWORD is required}@postgres:5432/${PG_DATABASE:-stock_data}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   stock-monitor:
-    build: .
-    container_name: smart-stock-monitor
+    <<: *app-image
     ports:
       - "${APP_PORT:-8502}:8501"
     environment:
@@ -16,6 +32,8 @@ services:
       - DATABASE_URL=postgresql://${PG_USER:-ssm}:${PG_PASSWORD:?PG_PASSWORD is required}@postgres:5432/${PG_DATABASE:-stock_data}
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
+      - APP_VERSION=${APP_VERSION:-dev}
     env_file:
       - .env
     depends_on:
@@ -23,6 +41,8 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
@@ -33,7 +53,6 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: ssm-redis
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
@@ -47,7 +66,6 @@ services:
 
   postgres:
     image: postgres:16-alpine
-    container_name: ssm-postgres
     environment:
       POSTGRES_USER: ${PG_USER:-ssm}
       POSTGRES_PASSWORD: ${PG_PASSWORD:?PG_PASSWORD is required}
@@ -63,8 +81,7 @@ services:
       start_period: 10s
 
   worker:
-    build: .
-    container_name: ssm-worker
+    <<: *app-image
     command: celery -A tasks.celery_config.celery_app worker --loglevel=info -c 4
     environment:
       - REDIS_HOST=redis
@@ -77,17 +94,28 @@ services:
       - DATABASE_URL=postgresql://${PG_USER:-ssm}:${PG_PASSWORD:?PG_PASSWORD is required}@postgres:5432/${PG_DATABASE:-stock_data}
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
+      - APP_VERSION=${APP_VERSION:-dev}
     env_file:
       - .env
     depends_on:
       redis:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A tasks.celery_config.celery_app inspect ping --timeout=5 | grep -q pong"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   beat:
-    build: .
-    container_name: ssm-beat
-    command: celery -A tasks.celery_config.celery_app beat --loglevel=info
+    <<: *app-image
+    command: sh -c "rm -f /tmp/celerybeat.pid && exec celery -A tasks.celery_config.celery_app beat --loglevel=info --pidfile=/tmp/celerybeat.pid"
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -99,15 +127,28 @@ services:
       - DATABASE_URL=postgresql://${PG_USER:-ssm}:${PG_PASSWORD:?PG_PASSWORD is required}@postgres:5432/${PG_DATABASE:-stock_data}
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
+      - APP_VERSION=${APP_VERSION:-dev}
     env_file:
       - .env
     depends_on:
       redis:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /tmp/celerybeat.pid && kill -0 $$(cat /tmp/celerybeat.pid)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
 volumes:
   redis_data:
     driver: local
   pg_data:
     driver: local
+

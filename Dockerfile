@@ -1,5 +1,7 @@
 FROM python:3.11-slim AS builder
 
+ARG APP_VERSION=dev
+
 WORKDIR /app
 
 # 安装构建依赖
@@ -13,10 +15,16 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
+RUN pip install --no-cache-dir --prefer-binary -r requirements.txt
 
 # ---- 运行阶段 ----
 FROM python:3.11-slim
+
+ARG APP_VERSION=dev
+ARG VCS_REF=unknown
+LABEL org.opencontainers.image.title="Smart Stock Monitor" \
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.revision="${VCS_REF}"
 
 WORKDIR /app
 
@@ -28,6 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 从 builder 阶段复制已安装的依赖
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
+ENV APP_VERSION="${APP_VERSION}"
 
 # 复制应用代码
 COPY . .
@@ -48,4 +57,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:8501/_stcore/health || exit 1
 
 # 启动命令
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true", "--global.developmentMode=false"]
+CMD ["sh", "-c", "alembic upgrade head && exec streamlit run streamlit_app.py --server.port=8501 --server.address=0.0.0.0 --server.headless=true --global.developmentMode=false"]

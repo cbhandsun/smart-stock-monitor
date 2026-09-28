@@ -9,7 +9,6 @@ reports/
 logs/
 cache/
 *.log
-.streamlit/
 test_data/
 tests/
 scratch/
@@ -25,3 +24,6 @@ UPGRADE_PLAN.md
 healthcheck-daemon.log
 healthcheck.log
 streamlit.log
+pytest.ini
+pyrightconfig.json
+requirements-dev.txt

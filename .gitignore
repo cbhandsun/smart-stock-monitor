@@ -29,3 +29,6 @@ test_main_ai.py
 # Local scratch files
 scratch/
 test_tv.html
+cache/
+.vscode/
+ai_client.py

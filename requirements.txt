@@ -1,28 +1,30 @@
 # Core
-streamlit==1.42.0
+streamlit==1.54.0
 plotly==5.24.1
 pandas==2.2.3
 numpy==1.26.4
-akshare>=1.16.72
+akshare==1.18.82
 openai==1.70.0
-python-dotenv==1.0.1
-requests>=2.31.0
+python-dotenv==1.2.2
+requests==2.34.2
+nh3==0.3.6
 
 # Data Sources
-tushare>=1.4.2
-psycopg2-binary>=2.9.9
+tushare==1.4.29
+psycopg2-binary==2.9.12
 
 # v7.0 Quantum Pro
 redis==5.2.1
 celery==5.4.0
 bcrypt==4.2.1
-pyjwt==2.10.1
+pyjwt==2.13.0
 sqlalchemy==2.0.37
+alembic==1.19.0
 google-generativeai==0.8.4
 anthropic==0.44.0
 scikit-learn==1.6.1
 yfinance==0.2.55
-vectorbt>=0.26.0
+vectorbt==1.0.0
 
-# Testing (dev only)
-pytest==8.3.4
+# Security pin for Streamlit's image-processing dependency.
+Pillow==12.3.0

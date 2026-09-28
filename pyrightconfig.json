@@ -1,0 +1,34 @@
+{
+    "pythonVersion": "3.11",
+    "pythonPlatform": "All",
+    "typeCheckingMode": "basic",
+    "venvPath": ".",
+    "venv": ".venv",
+    "extraPaths": [
+        "."
+    ],
+    "include": [
+        "auth/validation.py",
+        "auth/login_throttle.py",
+        "core/circuit_breaker.py",
+        "core/html_security.py",
+        "core/logging_utils.py",
+        "core/routing.py",
+        "core/url_security.py",
+        "core/user_context.py",
+        "modules/backtest/input_validation.py",
+        "modules/portfolio/watchlist_manager.py"
+    ],
+    "exclude": [
+        "cache",
+        "reports"
+    ],
+    "executionEnvironments": [
+        {
+            "root": ".",
+            "extraPaths": [
+                "."
+            ]
+        }
+    ]
+}

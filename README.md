@@ -129,6 +129,8 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
+Compose 会先运行 `alembic upgrade head`；迁移成功后才启动 Web、Worker 和 Beat。`PG_PASSWORD` 或至少 32 位的 `JWT_SECRET_KEY` 缺失时部署会直接拒绝启动。
+
 访问地址默认是 `http://服务器IP:8502`，可通过 `.env` 里的 `APP_PORT` 调整宿主机端口。
 
 开发调试时如果需要把当前源码目录挂进容器，并临时暴露 Redis/PostgreSQL：
@@ -141,13 +143,14 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 
 ```bash
 pip install -r requirements.txt
+alembic upgrade head
 ```
 
 ## 🚀 启动系统
 
 ```bash
 # 启动主应用
-streamlit run app.py
+streamlit run streamlit_app.py
 
 # 启动Celery Worker (可选)
 celery -A tasks.celery_config worker --loglevel=info
@@ -168,19 +171,51 @@ GEMINI_API_KEY=your_gemini_key
 KIMI_API_KEY=your_kimi_key
 DEEPSEEK_API_KEY=your_deepseek_key
 
-# Redis配置
-REDIS_URL=redis://localhost:6379/0
+# Docker 发布标识与端口
+APP_VERSION=replace-with-image-version-or-git-sha
+APP_PORT=8502
 
-# 数据库配置
-DATABASE_URL=sqlite:///./data/stock_monitor.db
+# Docker 内部 PostgreSQL 配置
+PG_USER=ssm
+PG_DATABASE=stock_data
+PG_PASSWORD=replace-with-a-long-random-database-password
 
-# JWT密钥
-JWT_SECRET_KEY=your_secret_key
+# JWT 签名密钥（至少 32 位，生产环境使用密码管理系统生成与保管）
+JWT_SECRET_KEY=replace-with-at-least-32-random-characters
 
-# Celery配置
-CELERY_BROKER_URL=redis://localhost:6379/1
-CELERY_RESULT_BACKEND=redis://localhost:6379/2
+# 可选：通用 Webhook 必须同时配置 HTTPS 地址与允许主机
+ALERT_WEBHOOK_URL=https://alerts.example.com/ssm
+ALERT_WEBHOOK_ALLOWED_HOSTS=alerts.example.com
 ```
+
+Compose 会在容器网络内生成 `DATABASE_URL`、`CELERY_BROKER_URL` 和
+`CELERY_RESULT_BACKEND`，Docker 部署不需要在 `.env` 中把这些地址指向
+`localhost`。不要提交 `.env`，也不要复用示例值。
+
+## 备份、恢复与回滚
+
+发布前备份 PostgreSQL，并把备份文件保存到加密且有保留策略的位置：
+
+```bash
+mkdir -p backups
+docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > backups/stock_data.dump
+docker compose exec -T postgres pg_restore --list < backups/stock_data.dump
+```
+
+恢复会覆盖目标数据库，只能在已核对 Compose 项目和目标库名、停止 Web/Worker/Beat 并再次备份后执行：
+
+```bash
+docker compose stop stock-monitor worker beat
+docker compose exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner --no-privileges' < backups/stock_data.dump
+docker compose run --rm migrate
+docker compose up -d stock-monitor worker beat
+```
+
+首次发布或重大迁移前，应先把备份恢复到一个不映射宿主机端口的全新
+PostgreSQL 实例，逐表比较行数、核对 `alembic_version`，并检查外键约束后再
+进入生产变更窗口。只验证 `pg_restore --list` 不等同于完成恢复演练。
+
+镜像通过 `APP_VERSION`/Git SHA 标识。回滚时使用上一已验收的不可变镜像 digest，先验证迁移是否向后兼容；不兼容时按迁移说明回退数据库或从备份恢复，禁止只回滚 Web 容器。
 
 ## 📊 功能页面
 

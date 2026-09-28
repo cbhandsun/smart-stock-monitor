@@ -2,20 +2,31 @@
 预警任务 — Celery 异步执行
 通知渠道优先级: 企业微信 Webhook > 通用 Webhook > 日志降级
 """
+
 from celery import shared_task
 import sys
 import os
 import logging
-import json
 import requests
 from datetime import datetime, time as dtime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from modules.alerts.alert_system import AlertManager, AlertType
+from modules.alerts.alert_system import AlertManager
 from core.cache import RedisCache
+from core.url_security import validate_https_webhook
+from database.models import get_db
+from modules.alerts.delivery_ledger import DeliveryLedger
 
 logger = logging.getLogger(__name__)
+
+_WECOM_HOSTS = {"qyapi.weixin.qq.com"}
+_LARK_HOSTS = {"open.feishu.cn", "open.larksuite.com"}
+
+
+def _generic_webhook_hosts() -> set[str]:
+    raw_hosts = os.getenv("ALERT_WEBHOOK_ALLOWED_HOSTS", "")
+    return {host.strip() for host in raw_hosts.split(",") if host.strip()}
 
 
 def is_trading_hours() -> bool:
@@ -31,31 +42,30 @@ def is_trading_hours() -> bool:
 #  通知发送核心 (多渠道降级链)
 # ============================================================
 
+
 def _send_wecom_webhook(title: str, content: str) -> bool:
     """
     企业微信 Webhook 推送 (Markdown 消息)
     配置方式: 环境变量 WECOM_WEBHOOK_URL
     """
-    url = os.getenv('WECOM_WEBHOOK_URL', '')
+    url = validate_https_webhook(os.getenv("WECOM_WEBHOOK_URL", ""), _WECOM_HOSTS)
     if not url:
         return False
     try:
         payload = {
             "msgtype": "markdown",
-            "markdown": {
-                "content": f"## {title}\n{content}"
-            }
+            "markdown": {"content": f"## {title}\n{content}"},
         }
-        resp = requests.post(url, json=payload, timeout=5)
+        resp = requests.post(url, json=payload, timeout=(3, 5))
+        resp.raise_for_status()
         result = resp.json()
-        if result.get('errcode') == 0:
-            logger.info(f"[Alert] 企业微信推送成功: {title}")
+        if result.get("errcode") == 0:
+            logger.info("WeCom alert delivery succeeded")
             return True
-        else:
-            logger.warning(f"[Alert] 企业微信推送失败: {result}")
-            return False
-    except Exception as e:
-        logger.warning(f"[Alert] 企业微信推送异常: {e}")
+        logger.warning("[Alert] 企业微信推送被远端拒绝")
+        return False
+    except (requests.RequestException, ValueError, TypeError):
+        logger.warning("[Alert] 企业微信推送失败")
         return False
 
 
@@ -64,26 +74,21 @@ def _send_lark_webhook(title: str, content: str) -> bool:
     飞书 Webhook 推送 (文本消息)
     配置方式: 环境变量 LARK_WEBHOOK_URL
     """
-    url = os.getenv('LARK_WEBHOOK_URL', '')
+    url = validate_https_webhook(os.getenv("LARK_WEBHOOK_URL", ""), _LARK_HOSTS)
     if not url:
         return False
     try:
-        payload = {
-            "msg_type": "text",
-            "content": {
-                "text": f"{title}\n{content}"
-            }
-        }
-        resp = requests.post(url, json=payload, timeout=5)
+        payload = {"msg_type": "text", "content": {"text": f"{title}\n{content}"}}
+        resp = requests.post(url, json=payload, timeout=(3, 5))
+        resp.raise_for_status()
         result = resp.json()
-        if result.get('StatusCode') == 0 or result.get('code') == 0:
-            logger.info(f"[Alert] 飞书推送成功: {title}")
+        if result.get("StatusCode") == 0 or result.get("code") == 0:
+            logger.info("Lark alert delivery succeeded")
             return True
-        else:
-            logger.warning(f"[Alert] 飞书推送失败: {result}")
-            return False
-    except Exception as e:
-        logger.warning(f"[Alert] 飞书推送异常: {e}")
+        logger.warning("[Alert] 飞书推送被远端拒绝")
+        return False
+    except (requests.RequestException, ValueError, TypeError):
+        logger.warning("[Alert] 飞书推送失败")
         return False
 
 
@@ -92,7 +97,10 @@ def _send_generic_webhook(alert_id: str, title: str, content: str) -> bool:
     通用 Webhook 推送 (POST JSON)
     配置方式: 环境变量 ALERT_WEBHOOK_URL
     """
-    url = os.getenv('ALERT_WEBHOOK_URL', '')
+    url = validate_https_webhook(
+        os.getenv("ALERT_WEBHOOK_URL", ""),
+        _generic_webhook_hosts(),
+    )
     if not url:
         return False
     try:
@@ -100,16 +108,19 @@ def _send_generic_webhook(alert_id: str, title: str, content: str) -> bool:
             "alert_id": alert_id,
             "title": title,
             "content": content,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
-        resp = requests.post(url, json=payload, timeout=5)
-        if resp.status_code == 200:
-            logger.info(f"[Alert] Webhook 推送成功: {alert_id}")
+        resp = requests.post(url, json=payload, timeout=(3, 5))
+        if 200 <= resp.status_code < 300:
+            logger.info("Generic webhook alert delivery succeeded")
             return True
-        logger.warning(f"[Alert] Webhook 推送失败 HTTP {resp.status_code}: {alert_id}")
+        logger.warning(
+            "Generic webhook alert delivery was rejected",
+            extra={"status_code": resp.status_code},
+        )
         return False
-    except Exception as e:
-        logger.warning(f"[Alert] Webhook 推送异常: {e}")
+    except requests.RequestException:
+        logger.warning("[Alert] Webhook 推送失败")
         return False
 
 
@@ -118,6 +129,10 @@ def _deliver_notification(alert_id: str, message: str) -> str:
     通知分发 (降级链: 企微 → 飞书 → 通用 Webhook → 日志)
     返回实际使用的渠道名称
     """
+    if not isinstance(alert_id, str) or not alert_id or len(alert_id) > 100:
+        raise ValueError("invalid alert id")
+    if not isinstance(message, str) or len(message) > 500:
+        raise ValueError("invalid alert message")
     title = f"📢 SSM 预警触发 [{alert_id}]"
     content = message
 
@@ -128,19 +143,15 @@ def _deliver_notification(alert_id: str, message: str) -> str:
     if _send_generic_webhook(alert_id, title, content):
         return "webhook"
 
-    # 兜底: 写入持久化告警日志
-    log_dir = './logs/alerts'
-    os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, f"alerts_{datetime.now().strftime('%Y-%m-%d')}.log")
-    with open(log_file, 'a', encoding='utf-8') as f:
-        f.write(f"[{datetime.now().isoformat()}] {alert_id}: {message}\n")
-    logger.info(f"[Alert] 已写入日志降级: {alert_id}")
-    return "log"
+    # No remote channel: record metadata in the delivery ledger without persisting user content.
+    logger.warning("No remote alert channel is configured")
+    return "ledger"
 
 
 # ============================================================
 #  Celery 任务
 # ============================================================
+
 
 @shared_task
 def check_all_alerts():
@@ -150,13 +161,16 @@ def check_all_alerts():
         return "Skipped: outside trading hours"
 
     try:
-        alert_manager = AlertManager()
         cache = RedisCache()
-
-        # 获取所有活跃预警
-        active_alerts = alert_manager.get_active_alerts()
-        if not active_alerts:
+        user_ids = get_db().get_active_alert_user_ids()
+        if not user_ids:
             return "No active alerts"
+
+        managers = [AlertManager(user_id=user_id) for user_id in user_ids]
+        alerts_by_manager = [
+            (manager, manager.get_active_alerts()) for manager in managers
+        ]
+        active_alerts = [alert for _, alerts in alerts_by_manager for alert in alerts]
 
         # 获取需要检查的股票列表
         symbols = set(a.symbol for a in active_alerts)
@@ -173,35 +187,60 @@ def check_all_alerts():
             return "No market data in cache"
 
         # 检查预警触发
-        triggered = alert_manager.check_all_alerts(market_data)
+        triggered = []
+        for manager, alerts in alerts_by_manager:
+            owned_symbols = {alert.symbol for alert in alerts}
+            owned_market_data = {
+                symbol: data
+                for symbol, data in market_data.items()
+                if symbol in owned_symbols
+            }
+            triggered.extend(manager.check_all_alerts(owned_market_data))
 
         # 异步发送通知 (每条独立任务，失败不阻塞其他)
         for alert in triggered:
-            send_alert_notification.delay(alert.id, alert.message)
+            event_key = f"{alert.id}:{alert.trigger_count}"
+            send_alert_notification.delay(
+                event_key,
+                alert.user_id,
+                alert.id,
+                alert.message,
+            )
 
         return f"Checked {len(active_alerts)} alerts, {len(triggered)} triggered"
 
-    except Exception as e:
-        logger.error(f"[check_all_alerts] error: {e}")
-        return f"Error: {str(e)}"
+    except Exception:
+        logger.error("Alert checking failed")
+        raise
 
 
 @shared_task(bind=True, max_retries=2)
-def send_alert_notification(self, alert_id: str, message: str):
+def send_alert_notification(
+    self,
+    event_key: str,
+    user_id: str,
+    alert_id: str,
+    message: str,
+):
     """
     发送预警通知 (多渠道降级链)
     渠道: 企业微信 Webhook → 通用 Webhook → 日志文件
     """
+    ledger = DeliveryLedger()
+    if not ledger.claim(event_key, alert_id, user_id):
+        return "Notification already handled"
     try:
         channel = _deliver_notification(alert_id, message)
+        ledger.mark_sent(event_key, channel)
         return f"Notification sent via [{channel}] for {alert_id}"
-    except Exception as exc:
-        logger.error(f"[send_alert_notification] fatal error: {exc}")
+    except Exception:
+        ledger.mark_failed(event_key)
+        logger.error("Alert notification delivery failed")
         try:
-            raise self.retry(exc=exc, countdown=30)
+            raise self.retry(exc=RuntimeError("alert delivery failed"), countdown=30)
         except self.MaxRetriesExceededError:
-            logger.error(f"[send_alert_notification] max retries reached for {alert_id}")
-            return f"Failed to notify: {alert_id}"
+            logger.error("Alert notification reached its retry limit")
+            return "Notification failed"
 
 
 @shared_task
@@ -210,20 +249,21 @@ def cleanup_triggered_alerts(days: int = 7):
     try:
         from datetime import datetime, timedelta
 
-        alert_manager = AlertManager()
-        triggered = alert_manager.get_triggered_alerts()
-
         cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
 
         removed = 0
-        for alert in triggered:
-            if alert.triggered_at and alert.triggered_at < cutoff_date:
-                alert_manager.remove_alert(alert.id)
-                removed += 1
+        for user_id in get_db().get_triggered_alert_user_ids():
+            alert_manager = AlertManager(user_id=user_id)
+            for alert in alert_manager.get_triggered_alerts():
+                if alert.triggered_at and alert.triggered_at < cutoff_date:
+                    if alert_manager.remove_alert(alert.id):
+                        removed += 1
 
-        logger.info(f"[cleanup_triggered_alerts] Removed {removed} old alerts (>{days}d)")
+        logger.info(
+            f"[cleanup_triggered_alerts] Removed {removed} old alerts (>{days}d)"
+        )
         return f"Removed {removed} old alerts"
 
-    except Exception as e:
-        logger.error(f"[cleanup_triggered_alerts] error: {e}")
-        return f"Error: {str(e)}"
+    except Exception:
+        logger.error("Triggered-alert cleanup failed")
+        raise
