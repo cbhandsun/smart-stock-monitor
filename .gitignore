@@ -32,3 +32,4 @@ test_tv.html
 cache/
 .vscode/
 ai_client.py
+*.sql
