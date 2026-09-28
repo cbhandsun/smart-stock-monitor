@@ -57,10 +57,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build Docker image
-        run: docker build --provenance=true --sbom=true --build-arg APP_VERSION="$GITHUB_SHA" --build-arg VCS_REF="$GITHUB_SHA" -t "smart-stock-monitor:$GITHUB_SHA" .
+        run: docker build --build-arg APP_VERSION="$GITHUB_SHA" --build-arg VCS_REF="$GITHUB_SHA" -t "smart-stock-monitor:$GITHUB_SHA" .
 
       - name: Test complete Compose stack
         run: |
+          touch .env
           export PG_PASSWORD="ci-only-database-password"
           export JWT_SECRET_KEY="ci-only-secret-key-that-is-longer-than-32-characters"
           export APP_VERSION="$GITHUB_SHA"
